@@ -40,19 +40,23 @@ spec:
       ref: {kind: deployment, name: frontend, namespace: web}
       path: '{.metadata.annotations.deployment\.kubernetes\.io/revision}'
       gte: 3
+    - id: not-replaced
+      description: the original deployment object is still in place
+      type: script
+      path: checks/not-recreated.sh
     - id: replicas
-      description: the deployment is set to 3 replicas
+      description: the deployment is set to 5 replicas
       type: jsonPath
       ref: {kind: deployment, name: frontend, namespace: web}
       path: '{.spec.replicas}'
-      equals: '3'
+      equals: '5'
     - id: rolled-out
-      description: all 3 replicas are ready and the rollout is complete
+      description: all 5 replicas are ready and the rollout is complete
       weight: 2
       type: ready
       ref: {kind: deployment, name: frontend, namespace: web}
-      minReady: 3
-      retry: {attempts: 12, interval: 4s}
+      minReady: 5
+      retry: {attempts: 15, interval: 4s}
     - id: strategy-type
       description: the deployment uses a rolling update
       type: jsonPath
@@ -64,13 +68,13 @@ spec:
       type: jsonPath
       ref: {kind: deployment, name: frontend, namespace: web}
       path: '{.spec.strategy.rollingUpdate.maxUnavailable}'
-      matches: '^0%?$'
+      matches: '^(0|1?[0-9]%)$'
     - id: max-surge
       description: a rollout creates at most one extra pod
       type: jsonPath
       ref: {kind: deployment, name: frontend, namespace: web}
       path: '{.spec.strategy.rollingUpdate.maxSurge}'
-      oneOf: ['1', 33%]
+      matches: '^(1|([1-9]|1[0-9]|20)%)$'
     - id: requests
       description: every running frontend pod has the requested resources
       weight: 2
@@ -79,10 +83,10 @@ spec:
       match: all
       path: '{.spec.containers[*].resources.requests.cpu}/{.spec.containers[*].resources.requests.memory}'
       equals: 50m/64Mi
-      retry: {attempts: 12, interval: 4s}
+      retry: {attempts: 15, interval: 4s}
   solution:
     script: solution/solve.sh
     readme: solution/README.md
   validation:
-    passBeforeSolution: [strategy-type]
+    passBeforeSolution: [strategy-type, not-replaced]
     timeout: 10m

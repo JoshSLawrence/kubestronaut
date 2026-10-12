@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Recreating the deployment gives it a new uid, which is how a check notices.
+uid=$(kubectl -n web get deployment frontend -o 'jsonpath={.metadata.uid}')
+kubectl -n web annotate deployment frontend "kubestronaut.io/created-as=$uid"
+
 # A tag that does not exist keeps the second revision from ever becoming
 # ready, so the rollout stalls while revision 1 keeps serving.
 kubectl -n web set image deployment/frontend \
