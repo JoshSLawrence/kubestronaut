@@ -1,0 +1,85 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: troubleshoot-coredns
+  title: Fix cluster DNS and add a custom name
+  domain: troubleshooting
+  difficulty: medium
+  tags: [coredns, dns, services]
+spec:
+  timeLimit: 12m
+  weight: 7
+  context: k8s-dns
+  namespaces: [apps]
+  exclusive: true
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - A Service only routes to pods that its selector matches.
+    - CoreDNS reads its configuration from a ConfigMap. Its pods pick up an
+      edit after a while, or at once when they are restarted.
+    - "`kubectl -n kube-system logs` and `dig @<kube-dns IP> <name>` from a
+      node show what CoreDNS answers."
+  setup:
+    - manifest: setup/apps.yaml
+    - wait:
+        ref: {kind: pod, name: legacy, namespace: apps}
+        for: condition=Ready
+    - wait:
+        ref: {kind: pod, name: client, namespace: apps}
+        for: condition=Ready
+    - script: setup/break-dns.sh
+      timeout: 5m
+  checks:
+    - id: kube-dns-ip
+      description: the kube-dns Service keeps cluster IP 10.96.0.10
+      type: jsonPath
+      ref: {kind: service, name: kube-dns, namespace: kube-system}
+      path: '{.spec.clusterIP}'
+      equals: 10.96.0.10
+    - id: kube-dns-endpoints
+      description: the kube-dns Service has a ready endpoint
+      weight: 2
+      type: jsonPath
+      ref: {kind: endpointslice, namespace: kube-system, selector: kubernetes.io/service-name=kube-dns}
+      path: '{.endpoints[*].conditions.ready}'
+      contains: 'true'
+      retry: {attempts: 10, interval: 3s}
+    - id: service-names-resolve
+      description: kubernetes.default.svc.cluster.local resolves through cluster DNS
+      weight: 3
+      type: script
+      path: checks/resolves.sh
+      args: [kubernetes.default.svc.cluster.local, default, kubernetes]
+      retry: {attempts: 8, interval: 5s}
+    - id: legacy-resolves
+      description: legacy.example.internal resolves to the Service apps/legacy
+      weight: 3
+      type: script
+      path: checks/resolves.sh
+      args: [legacy.example.internal, apps, legacy]
+      retry: {attempts: 8, interval: 5s}
+    - id: legacy-follows-service
+      description: the name is mapped to the Service's DNS name, not to an address
+      weight: 2
+      type: script
+      path: checks/rewrite-rule.sh
+    - id: pod-resolves
+      description: a pod resolves legacy.example.internal to the Service address
+      weight: 2
+      type: script
+      path: checks/pod-resolves.sh
+      retry: {attempts: 8, interval: 5s}
+    - id: coredns-ready
+      description: deployment kube-system/coredns is available
+      type: ready
+      ref: {kind: deployment, name: coredns, namespace: kube-system}
+      retry: {attempts: 10, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [kube-dns-ip, coredns-ready]
+    timeout: 15m
