@@ -10,4 +10,5 @@ On `controlplane`, jane's private key is at `/root/jane.key`.
    pods and get on pod logs. Create a RoleBinding `jane-pod-reader` that
    grants the Role to the user `jane`.
 
+The certificate must carry no organisation (`O`) or group, only the user name.
 Do not give jane any access outside `finance`.

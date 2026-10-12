@@ -82,7 +82,9 @@ spec:
         }
         pods=$(kc auth can-i list pods -n default 2>/dev/null)
         nodes=$(kc auth can-i list nodes 2>/dev/null)
-        [ "$pods" = no ] && [ "$nodes" = no ]
+        # kubectl may add a reason after the answer: "no - RBAC: ..."
+        case "$pods" in no | "no "*) ;; *) exit 1 ;; esac
+        case "$nodes" in no | "no "*) ;; *) exit 1 ;; esac
     - id: cert-groups
       description: the certificate puts jane in no group beyond the default one
       weight: 2
