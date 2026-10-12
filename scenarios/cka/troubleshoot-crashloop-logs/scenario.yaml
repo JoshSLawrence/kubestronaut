@@ -1,0 +1,70 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: troubleshoot-crashloop-logs
+  title: Read the logs of a crashing app and fix it
+  domain: troubleshooting
+  difficulty: easy
+  tags: [logs, configmap, crashloop]
+spec:
+  timeLimit: 8m
+  weight: 4
+  context: k8s-logs
+  namespaces: [orders]
+  exclusive: false
+  images:
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - "`kubectl logs` has a flag for the instance that ran before the last
+      restart."
+    - "`kubectl set env` and `kubectl edit` can both add a variable that comes
+      from a ConfigMap key."
+  setup:
+    - script: setup/prepare.sh
+    - manifest: setup/orders.yaml
+    - script: setup/record.sh
+      timeout: 4m
+  checks:
+    - id: error-file
+      description: /root/orders-error.txt on controlplane holds the last line the previous instance logged
+      weight: 3
+      type: script
+      path: checks/error-file.sh
+    - id: env-from-configmap
+      description: the container gets DB_HOST from the ConfigMap key that holds the database host
+      weight: 3
+      type: jsonPath
+      ref: {kind: deployment, name: orders, namespace: orders}
+      path: '{.spec.template.spec.containers[?(@.name=="orders")].env[?(@.name=="DB_HOST")].valueFrom.configMapKeyRef.name}/{.spec.template.spec.containers[?(@.name=="orders")].env[?(@.name=="DB_HOST")].valueFrom.configMapKeyRef.key}'
+      equals: orders-config/database-host
+    - id: container-unchanged
+      description: the orders container keeps its image and command
+      type: script
+      path: checks/container-unchanged.sh
+    - id: config-unchanged
+      description: ConfigMap orders-config still holds the original host
+      type: jsonPath
+      ref: {kind: configmap, name: orders-config, namespace: orders}
+      path: '{.data.database-host}'
+      equals: orders-db.orders.svc.cluster.local
+    - id: orders-ready
+      description: deployment orders is available and its pod stays running
+      weight: 3
+      type: ready
+      ref: {kind: deployment, name: orders, namespace: orders}
+      retry: {attempts: 10, interval: 3s}
+    - id: restarts-stopped
+      description: the running pod has not restarted since it was created
+      type: jsonPath
+      ref: {kind: pod, namespace: orders, selector: app=orders}
+      path: '{.status.containerStatuses[0].restartCount}'
+      equals: 0
+      match: all
+      retry: {attempts: 10, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [container-unchanged, config-unchanged]
+    timeout: 10m
