@@ -1,0 +1,77 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: storageclass-dynamic
+  title: Create a default StorageClass with delayed binding
+  domain: storage
+  difficulty: medium
+  tags: [storageclass, pvc, provisioning]
+spec:
+  timeLimit: 10m
+  weight: 5
+  context: k8s-sc
+  namespaces: [data]
+  exclusive: true
+  images:
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - "`kubectl get storageclass` marks the default class; it is an annotation
+      on the StorageClass."
+    - "`reclaimPolicy` and `volumeBindingMode` are fields of the StorageClass."
+    - A claim without a class is filled in with the default class later on.
+  setup:
+    - script: setup/make-claim.sh
+  checks:
+    - id: class-fields
+      description: StorageClass local-fast has the requested provisioner and behaviour
+      weight: 2
+      type: jsonPath
+      ref: {kind: storageclass, name: local-fast}
+      path: '{.provisioner}/{.reclaimPolicy}/{.volumeBindingMode}'
+      equals: rancher.io/local-path/Retain/WaitForFirstConsumer
+    - id: only-default
+      description: local-fast is the one and only default StorageClass
+      weight: 2
+      type: script
+      path: checks/one-default.sh
+    - id: claim-kept
+      description: the original claim data/cache is still the same object
+      weight: 2
+      type: script
+      path: checks/claim-not-recreated.sh
+    - id: claim-class
+      description: the claim uses local-fast
+      type: jsonPath
+      ref: {kind: persistentvolumeclaim, name: cache, namespace: data}
+      path: '{.spec.storageClassName}'
+      equals: local-fast
+      retry: {attempts: 3, interval: 3s}
+    - id: claim-bound
+      description: the claim is bound
+      type: ready
+      ref: {kind: persistentvolumeclaim, name: cache, namespace: data}
+      retry: {attempts: 4, interval: 3s}
+    - id: writer-mounts-claim
+      description: pod data/cache-writer mounts the claim at /cache
+      type: jsonPath
+      ref: {kind: pod, name: cache-writer, namespace: data}
+      path: '{.spec.volumes[*].persistentVolumeClaim.claimName}/{.spec.containers[0].volumeMounts[*].mountPath}'
+      matches: '^cache/.*/cache'
+    - id: writer-ready
+      description: pod data/cache-writer is running
+      type: ready
+      ref: {kind: pod, name: cache-writer, namespace: data}
+      retry: {attempts: 4, interval: 3s}
+    - id: stamp
+      description: the writer stored its file on the volume
+      type: podExec
+      ref: {kind: pod, name: cache-writer, namespace: data}
+      command: [test, -s, /cache/stamp]
+      retry: {attempts: 3, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [claim-kept]
+    timeout: 10m
