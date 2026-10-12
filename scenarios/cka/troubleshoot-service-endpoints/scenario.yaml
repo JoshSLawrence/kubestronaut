@@ -59,7 +59,7 @@ spec:
       type: jsonPath
       ref: {kind: deployment, name: checkout, namespace: store}
       path: '{.spec.template.spec.containers[0].args[*]}'
-      contains: --http-port=8080
+      matches: '(^| )--http-port[= ]8080( |$)'
     - id: pod-labels
       description: the checkout pods keep their labels
       type: jsonPath
