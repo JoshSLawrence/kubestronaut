@@ -24,12 +24,14 @@ sha256_of() {
 render_traefik() {
   command -v helm >/dev/null 2>&1 ||
     die "helm is not on PATH: run via 'mise run vendor' so mise provides the pinned version"
-  helm template edge "$1" --namespace traefik --skip-crds \
-    --set service.type=NodePort \
+  helm template edge "$1" --namespace traefik --skip-crds --kube-version v1.36.4 \
+    --set service.spec.type=NodePort \
     --set ports.web.nodePort=30080 \
     --set ports.websecure.nodePort=30443 \
     --set ingressClass.name=traefik \
     --set ingressClass.isDefaultClass=false \
+    --set providers.kubernetesIngress.ingressClass=traefik \
+    --set providers.kubernetesIngress.strictPrefixMatching=true \
     --set api.dashboard=false \
     --set gateway.enabled=false \
     --set providers.kubernetesCRD.enabled=false \
@@ -68,7 +70,7 @@ while read -r name version want url dests; do
   esac
   got=$(sha256_of "$file")
   if [ "$got" != "$want" ]; then
-    die "$name $version: sha256 is $got, the lock says $want: if the upstream file was rebuilt, review it before updating the lock"
+    die "$name $version: sha256 is $got, the lock says $want: if the upstream file was rebuilt, review it before updating the lock (for a render: entry, a different Helm version than the one in mise.toml also changes the output)"
   fi
   if [ "${usage_check:-false}" = "true" ]; then
     continue

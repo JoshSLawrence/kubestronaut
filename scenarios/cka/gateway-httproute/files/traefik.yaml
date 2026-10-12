@@ -146,7 +146,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: edge-traefik
@@ -213,6 +213,8 @@ spec:
         - --providers.kubernetesingress
         - --providers.kubernetesingress.allowEmptyServices=true
         - --providers.kubernetesingress.ingressendpoint.publishedservice=traefik/edge-traefik
+        - --providers.kubernetesingress.ingressClass=traefik
+        - --providers.kubernetesingress.strictPrefixMatching=true
         - --providers.kubernetesgateway
         - --providers.kubernetesgateway.statusaddress.service.name=edge-traefik
         - --providers.kubernetesgateway.statusaddress.service.namespace=traefik
