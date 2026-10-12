@@ -1,0 +1,27 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - revive
+    - gosec
+    - errorlint
+    - gocritic
+    - misspell
+    - nolintlint
+    - unparam
+  exclusions:
+    rules:
+      # Launching subprocesses is the whole job of execx.
+      - path: internal/execx/
+        linters:
+          - gosec
+        text: G204
+formatters:
+  enable:
+    - gofmt
+    - goimports
