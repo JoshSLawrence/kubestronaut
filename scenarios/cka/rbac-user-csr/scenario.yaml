@@ -1,0 +1,176 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: rbac-user-csr
+  title: Onboard a user with a client certificate and RBAC
+  domain: cluster-architecture
+  difficulty: medium
+  tags: [rbac, csr, certificates]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-csr
+  namespaces: [finance]
+  exclusive: false
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - A CertificateSigningRequest holds a PEM certificate request, base64
+      encoded on one line, and names the signer that must issue it.
+    - "`kubectl auth can-i --as jane` shows what the role grants."
+  setup:
+    - script: setup/key.sh
+    - manifest: setup/finance.yaml
+    - wait:
+        ref: {kind: deployment, name: ledger, namespace: finance}
+        for: condition=Available
+  checks:
+    - id: csr-approved
+      description: CertificateSigningRequest jane is approved
+      type: jsonPath
+      ref: {kind: certificatesigningrequest, name: jane}
+      path: '{.status.conditions[?(@.type=="Approved")].status}'
+      equals: 'True'
+    - id: csr-signer
+      description: CertificateSigningRequest jane uses the signer for API server client certificates
+      type: jsonPath
+      ref: {kind: certificatesigningrequest, name: jane}
+      path: '{.spec.signerName}'
+      equals: kubernetes.io/kube-apiserver-client
+    - id: cert-from-csr
+      description: /root/jane.crt is the certificate the API server issued for the request
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        want=$(kubectl get csr jane -o 'jsonpath={.status.certificate}' | base64 -d | openssl x509 -noout -fingerprint -sha256)
+        got=$(openssl x509 -in /root/jane.crt -noout -fingerprint -sha256)
+        [ -n "$want" ] && [ "$want" = "$got" ]
+      retry: {attempts: 5, interval: 3s}
+    - id: cert-subject
+      description: the certificate is issued to the user jane and verifies against the cluster CA
+      type: nodeExec
+      node: controlplane
+      shell: |
+        openssl verify -CAfile /etc/kubernetes/pki/ca.crt /root/jane.crt >/dev/null &&
+          openssl x509 -in /root/jane.crt -noout -subject -nameopt multiline
+      stdoutMatches: 'commonName\s*=\s*jane\s'
+    - id: cert-authenticates
+      description: jane authenticates to the API server with the certificate and her key
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: >-
+        kubectl --kubeconfig=/dev/null
+        --server=https://127.0.0.1:6443
+        --certificate-authority=/etc/kubernetes/pki/ca.crt
+        --client-certificate=/root/jane.crt
+        --client-key=/root/jane.key
+        auth whoami -o 'jsonpath={.status.userInfo.username}'
+      stdoutMatches: '^jane$'
+    - id: role-exists
+      description: Role finance/pod-reader exists
+      type: resourceExists
+      ref: {kind: role, name: pod-reader, namespace: finance}
+    - id: binding-subject
+      description: RoleBinding finance/jane-pod-reader grants the Role to the user jane only
+      weight: 2
+      type: jsonPath
+      ref: {kind: rolebinding, name: jane-pod-reader, namespace: finance}
+      path: '{.roleRef.kind}/{.roleRef.name} {range .subjects[*]}{.kind}/{.name} {end}'
+      matches: '^Role/pod-reader (User/jane )+$'
+    - id: list-pods
+      description: jane can list pods in finance
+      type: canI
+      as: jane
+      verb: list
+      resource: pods
+      namespace: finance
+      retry: {attempts: 10, interval: 3s}
+    - id: watch-pods
+      description: jane can watch pods in finance
+      type: canI
+      as: jane
+      verb: watch
+      resource: pods
+      namespace: finance
+      retry: {attempts: 10, interval: 3s}
+    - id: get-logs
+      description: jane can read pod logs in finance
+      type: canI
+      as: jane
+      verb: get
+      resource: pods
+      subresource: log
+      namespace: finance
+      retry: {attempts: 10, interval: 3s}
+    - id: no-delete-pods
+      description: jane cannot delete pods in finance
+      type: canI
+      as: jane
+      verb: delete
+      resource: pods
+      namespace: finance
+      allowed: false
+    - id: no-create-pods
+      description: jane cannot create pods in finance
+      type: canI
+      as: jane
+      verb: create
+      resource: pods
+      namespace: finance
+      allowed: false
+    - id: no-exec
+      description: jane cannot exec into pods in finance
+      type: canI
+      as: jane
+      verb: create
+      resource: pods
+      subresource: exec
+      namespace: finance
+      allowed: false
+    - id: no-secrets
+      description: jane cannot read secrets in finance
+      type: canI
+      as: jane
+      verb: get
+      resource: secrets
+      namespace: finance
+      allowed: false
+    - id: no-pods-default
+      description: jane cannot list pods in default
+      type: canI
+      as: jane
+      verb: list
+      resource: pods
+      namespace: default
+      allowed: false
+    - id: no-nodes
+      description: jane cannot list nodes
+      type: canI
+      as: jane
+      verb: list
+      resource: nodes
+      allowed: false
+    - id: bob-denied
+      description: another user cannot list pods in finance
+      type: canI
+      as: bob
+      verb: list
+      resource: pods
+      namespace: finance
+      allowed: false
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution:
+      - no-delete-pods
+      - no-create-pods
+      - no-exec
+      - no-secrets
+      - no-pods-default
+      - no-nodes
+      - bob-denied
+    timeout: 10m
