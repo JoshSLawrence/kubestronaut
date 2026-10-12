@@ -29,14 +29,23 @@ type Fake struct {
 	Clusters map[string][]backend.Node
 	// ExecFunc answers NodeExec; nil means exit 0 with no output.
 	ExecFunc func(cluster, alias string, argv []string) (execx.Result, error)
-	// CreateErr, DeleteErr and ShellErr make those calls fail.
-	CreateErr, DeleteErr, ShellErr, LoadErr error
+	// PrepareErr, CreateErr, DeleteErr, ShellErr and LoadErr make those
+	// calls fail.
+	PrepareErr, CreateErr, DeleteErr, ShellErr, LoadErr error
+	// PrepareNotify, when set, is passed to notify by Prepare.
+	PrepareNotify string
+	// ImageBuilt and ImageErr answer NodeImageBuilt; Stale answers
+	// StaleNodeImages.
+	ImageBuilt bool
+	ImageErr   error
+	Stale      []string
 
-	Created []backend.ClusterSpec
-	Deleted []string
-	Execs   []ExecCall
-	Shells  []string
-	Loaded  map[string][]string
+	Prepared []backend.ClusterSpec
+	Created  []backend.ClusterSpec
+	Deleted  []string
+	Execs    []ExecCall
+	Shells   []string
+	Loaded   map[string][]string
 }
 
 // New returns an empty fake.
@@ -46,6 +55,28 @@ func New() *Fake {
 
 // Name implements backend.Backend.
 func (f *Fake) Name() string { return "fake" }
+
+// Prepare implements backend.Backend.
+func (f *Fake) Prepare(_ context.Context, s backend.ClusterSpec, notify func(string)) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.PrepareErr != nil {
+		return f.PrepareErr
+	}
+	f.Prepared = append(f.Prepared, s)
+	if f.PrepareNotify != "" && notify != nil {
+		notify(f.PrepareNotify)
+	}
+	return nil
+}
+
+// NodeImageBuilt mirrors the kind backend's method so doctor can be tested.
+func (f *Fake) NodeImageBuilt(_ context.Context, version string) (string, bool, error) {
+	return "fake/node:" + version, f.ImageBuilt, f.ImageErr
+}
+
+// StaleNodeImages mirrors the kind backend's method so doctor can be tested.
+func (f *Fake) StaleNodeImages(context.Context) ([]string, error) { return f.Stale, nil }
 
 // Create implements backend.Backend. It builds the same nodes kind would.
 func (f *Fake) Create(_ context.Context, s backend.ClusterSpec) error {

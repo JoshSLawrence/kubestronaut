@@ -43,11 +43,14 @@ type State struct {
 
 // ClusterRef is one cluster of a session.
 type ClusterRef struct {
-	Name              string         `json:"name"`
-	Context           string         `json:"context"`
-	AdminKubeconfig   string         `json:"adminKubeconfig"`
-	KubernetesVersion string         `json:"kubernetesVersion"`
-	Nodes             []backend.Node `json:"nodes"`
+	Name              string `json:"name"`
+	Context           string `json:"context"`
+	AdminKubeconfig   string `json:"adminKubeconfig"`
+	KubernetesVersion string `json:"kubernetesVersion"`
+	// NodeImage is the --node-image override, kept so reset rebuilds the
+	// same cluster (and stays offline-safe) rather than building our image.
+	NodeImage string         `json:"nodeImage,omitempty"`
+	Nodes     []backend.Node `json:"nodes"`
 }
 
 // Task is one scenario in a session.

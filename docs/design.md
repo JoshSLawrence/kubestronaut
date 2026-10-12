@@ -147,7 +147,11 @@ kubestronaut/
 │   │       ├── config_test.go
 │   │       ├── images.go
 │   │       ├── kind.go
-│   │       └── kind_test.go
+│   │       ├── kind_test.go
+│   │       ├── nodeimage/
+│   │       │   └── Dockerfile
+│   │       ├── nodeimage.go
+│   │       └── nodeimage_test.go
 │   ├── check/
 │   │   ├── cani.go
 │   │   ├── check.go
@@ -312,6 +316,9 @@ type Node struct {
 }
 type Backend interface {
     Name() string
+    // Prepare builds or fetches what Create needs (the node image for kind);
+    // notify is called before slow work so the user knows why they wait.
+    Prepare(ctx context.Context, s ClusterSpec, notify func(string)) error
     Create(ctx context.Context, s ClusterSpec) error
     Delete(ctx context.Context, name string) error
     List(ctx context.Context) ([]string, error) // only ks-* clusters
@@ -817,6 +824,17 @@ the e2e validation proves it.
 
   Copy the full digests from the kind v0.33.0 release notes. The default is
   v1.36.4. An unknown version is an error unless `--node-image` is given.
+- **Node image build.** The pinned image has no editor, so `Backend.Prepare`
+  builds `kubestronaut/node:<version>-<hash>` on top of it before the first
+  create for that version (`internal/backend/kind/nodeimage/Dockerfile`:
+  vim, nano, less, etcd-client, dnsutils, procps, net-tools, a YAML-friendly
+  vimrc and the `k` alias). The hash covers the Dockerfile and base image.
+  The build goes to a `-candidate` tag and is promoted only after a smoke
+  test confirms the tools exist, so a broken image never sits under the real
+  tag. Prepare has its own 15m budget so a slow first build cannot eat into
+  the create timeout. Images carry the `io.kubestronaut.node` label, and
+  `doctor` lists old ones that can be removed. `reset` keeps a
+  `--node-image` override.
 - **Kubeconfigs.**
   - The admin kubeconfig belongs to the grader and setup only.
   - `~/.kubestronaut/kubeconfig` is regenerated from all active clusters,
@@ -843,6 +861,8 @@ the e2e validation proves it.
   printed and nodes pull the image themselves. Known risk: `kind load` can
   fail under Docker's containerd image store with multi-arch images.
 - **Timeouts:**
+  - node image prepare: 15m (only a first build per version is slow; e2e
+    runs it before the scenario's own budget starts)
   - kind create: 5m (includes `--wait 3m`)
   - image load: 5m
   - each setup script: 3m by default
@@ -919,8 +939,9 @@ the e2e validation proves it.
      restart, uncordon.
    - Checks: `status.nodeInfo.kubeletVersion == v1.37.0`; the kube-apiserver
      pod image ends with `:v1.37.0`; node Ready and schedulable.
-   - **Partly feasible.** kind nodes have no apt, so the exam's
-     `apt-mark unhold` steps are replaced by copying binaries. The upgrade
+   - **Partly feasible.** kind nodes are Debian and do have `apt-get`, but
+     not the Kubernetes package repository, so the exam's `apt-mark unhold`
+     steps are replaced by copying binaries. The upgrade
      pulls control-plane images (needs internet, or preload with `images`).
      kubeadm preflight may object to kind's settings (may need
      `--ignore-preflight-errors`). It also pulls an extra ~1 GB node image.

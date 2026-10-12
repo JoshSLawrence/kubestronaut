@@ -140,6 +140,16 @@ The library provides `ks_node <alias> <cmd...>` (run on a node through
 `#!/usr/bin/env bash` and `set -euo pipefail`, are `chmod +x`, and must pass
 shellcheck and `shfmt -i 2 -ci`.
 
+### Tools on the nodes
+
+Nodes run kubestronaut's node image (see the README), so prompts and
+solutions can rely on `vim`, `nano`, `less`, `etcdctl`, `nslookup`/`dig`,
+`ps` and `netstat` on every node, plus the kind image's `curl`, `jq` and
+`crictl`. If a scenario needs another tool, add it to
+`internal/backend/kind/nodeimage/Dockerfile` (and to `nodeTools` if its
+absence should fail the build) rather than installing it during setup: setup
+must not need internet, and every scenario should see the same node.
+
 ## Checks
 
 Every check has `id` (kebab-case, unique), `description`, and optional

@@ -226,9 +226,24 @@ func TestDoctorAndVersion(t *testing.T) {
 	e.run.Respond([]string{"kind", "version"}, execx.Result{Stdout: []byte("kind v0.33.0\n")}, nil)
 	e.run.Respond([]string{"kubectl", "version"}, execx.Result{Stdout: []byte("Client Version: v1.37.1\n")}, nil)
 	code, out, _ := e.exec("", "doctor")
-	if code != 0 || !strings.Contains(out, "All good.") || !strings.Contains(out, "7.5 GiB") {
+	if code != 0 || !strings.Contains(out, "All good.") || !strings.Contains(out, "7.5 GiB") ||
+		!strings.Contains(out, "not built yet; the first `start` builds it") {
 		t.Fatalf("doctor: %d\n%s", code, out)
 	}
+	e.be.ImageBuilt = true
+	if code, out, _ := e.exec("", "doctor"); code != 0 || !strings.Contains(out, "[ok]   node image: fake/node:v1.36.4\n") {
+		t.Fatalf("doctor built image: %d\n%s", code, out)
+	}
+	e.be.Stale = []string{"kubestronaut/node:v1.36.4-old"}
+	if code, out, _ := e.exec("", "doctor"); code != 0 || !strings.Contains(out, "[info] 1 old node image(s) can be removed: docker rmi kubestronaut/node:v1.36.4-old") {
+		t.Fatalf("doctor stale images: %d\n%s", code, out)
+	}
+	e.be.Stale = nil
+	e.be.ImageErr = errors.New("docker gone")
+	if code, out, _ := e.exec("", "doctor"); code != ExitError || !strings.Contains(out, "[FAIL] node image: docker gone") {
+		t.Fatalf("doctor image error: %d\n%s", code, out)
+	}
+	e.be.ImageErr = nil
 	e.be.Clusters["ks-orphan"] = fake.Nodes("ks-orphan", 0)
 	code, out, _ = e.exec("", "doctor")
 	if code != ExitError || !strings.Contains(out, "orphan cluster: ks-orphan") {
@@ -246,6 +261,10 @@ func TestDoctorAndVersion(t *testing.T) {
 	_, out, _ = e.exec("", "version")
 	if !strings.Contains(out, "kubestronaut test") || !strings.Contains(out, "docker:  29.8.2") || !strings.Contains(out, "kind:    not available") {
 		t.Fatalf("version:\n%s", out)
+	}
+	e.run.Respond([]string{"docker", "version"}, execx.Result{ExitCode: 1, Stderr: []byte("Cannot connect")}, nil)
+	if _, out, _ := e.exec("", "doctor"); !strings.Contains(out, "[FAIL] docker") || strings.Contains(out, "node image") {
+		t.Fatalf("doctor must skip the image check when docker is down:\n%s", out)
 	}
 }
 

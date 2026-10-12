@@ -3,6 +3,7 @@ package validate
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -147,6 +148,10 @@ func TestE2ESuccess(t *testing.T) {
 	if len(be.Deleted) != 1 || len(be.Clusters) != 0 {
 		t.Fatalf("cluster must be gone: deleted=%v", be.Deleted)
 	}
+	// Once up front, outside the scenario budget, and once more by start.
+	if len(be.Prepared) != 2 || be.Prepared[0].KubernetesVersion == "" {
+		t.Fatalf("prepare: %+v", be.Prepared)
+	}
 	var b bytes.Buffer
 	Print(&b, res)
 	if !strings.Contains(b.String(), "PASS  cka/demo") {
@@ -204,6 +209,17 @@ func TestE2ESolutionFailureAndKeep(t *testing.T) {
 		t.Fatalf("keep: deleted=%v out=%s", be2.Deleted, out.String())
 	}
 	_ = res
+}
+
+func TestE2EPrepareFailure(t *testing.T) {
+	cat := catalog("    passBeforeSolution: [no-bad]\n")
+	be := fake.New()
+	be.PrepareErr = errors.New("offline")
+	o, _ := options(t, cat, &cluster{}, be)
+	res := E2E(context.Background(), o, "demo")
+	if res.OK() || !strings.Contains(res.Err.Error(), "prepare cluster: offline") || len(be.Created) != 0 {
+		t.Fatalf("err: %v created=%v", res.Err, be.Created)
+	}
 }
 
 func TestE2ERefusesExistingClusters(t *testing.T) {

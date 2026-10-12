@@ -121,6 +121,20 @@ func E2E(ctx context.Context, o Options, id string) (res Result) {
 		return fail("clusters already exist (%s): run `kubestronaut stop --all` first so the run starts clean", strings.Join(existing, ", "))
 	}
 
+	// A first-time node image build is a property of the machine, not of the
+	// scenario, so it runs before the scenario's own budget starts.
+	version := o.K8sVersion
+	if version == "" {
+		version = s.Spec.Cluster.KubernetesVersion
+	}
+	if version == "" {
+		version = backend.DefaultKubernetesVersion
+	}
+	if err := o.Backend.Prepare(ctx, backend.ClusterSpec{KubernetesVersion: version, NodeImage: o.NodeImage},
+		func(msg string) { ui.Step(o.Out, "%s", msg) }); err != nil {
+		return fail("prepare cluster: %v", err)
+	}
+
 	timeout := s.Spec.Validation.Timeout.D()
 	if timeout <= 0 {
 		timeout = DefaultE2ETimeout

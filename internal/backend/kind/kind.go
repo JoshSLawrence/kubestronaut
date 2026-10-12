@@ -67,9 +67,14 @@ func (k *Kind) Create(ctx context.Context, s backend.ClusterSpec) error {
 	if err := ownedName(s.Name); err != nil {
 		return err
 	}
-	image, err := ResolveImage(s.KubernetesVersion, s.NodeImage)
-	if err != nil {
-		return err
+	image := s.NodeImage
+	var err error
+	if image == "" {
+		// Normally a no-op because Prepare already built it; repeated here so
+		// Create never hands kind a tag that does not exist locally.
+		if image, err = k.buildNodeImage(ctx, s.KubernetesVersion); err != nil {
+			return err
+		}
 	}
 	dir := filepath.Dir(s.Kubeconfig)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

@@ -28,12 +28,17 @@ func TestCreateCommand(t *testing.T) {
 	}
 	cfg := filepath.Join(dir, "sess", "kind-ks-cka-x.yaml")
 	want := "kind create cluster --name ks-cka-x --config " + cfg + " --kubeconfig " + kc + " --wait 3m"
-	if got := f.Lines()[0]; got != want {
+	lines := f.Lines()
+	if got := lines[len(lines)-1]; got != want {
 		t.Fatalf("command:\n got %s\nwant %s", got, want)
 	}
 	b, err := os.ReadFile(filepath.Clean(cfg))
 	if err != nil || !strings.Contains(string(b), "role: worker") {
 		t.Fatalf("config file: %q %v", b, err)
+	}
+	tag, _ := NodeImageTag("")
+	if !strings.Contains(string(b), "image: "+tag) {
+		t.Fatalf("config must use the built node image %s:\n%s", tag, b)
 	}
 }
 

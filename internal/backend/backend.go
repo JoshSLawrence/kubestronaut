@@ -41,6 +41,10 @@ type Node struct {
 // Backend creates and operates clusters.
 type Backend interface {
 	Name() string
+	// Prepare fetches or builds whatever Create needs and can be slow the
+	// first time (for kind, building the node image). It calls notify before
+	// any slow work so the caller can tell the user why it is waiting.
+	Prepare(ctx context.Context, s ClusterSpec, notify func(msg string)) error
 	Create(ctx context.Context, s ClusterSpec) error
 	Delete(ctx context.Context, name string) error
 	// List returns only clusters whose names start with the ks- prefix.

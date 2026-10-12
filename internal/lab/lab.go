@@ -27,9 +27,12 @@ import (
 
 // Timeouts from the design (section 5).
 const (
-	createTimeout = 5 * time.Minute
-	loadTimeout   = 5 * time.Minute
-	cleanupBudget = 2 * time.Minute
+	// prepareTimeout covers a first-time node image build: an apt install
+	// over a slow connection, well past the seconds it normally takes.
+	prepareTimeout = 15 * time.Minute
+	createTimeout  = 5 * time.Minute
+	loadTimeout    = 5 * time.Minute
+	cleanupBudget  = 2 * time.Minute
 )
 
 // Lab ties together the scenario catalog, a backend and the state store.
@@ -143,7 +146,7 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 	admin := filepath.Join(dir, "admin.kubeconfig")
 	st := &session.State{
 		Mode: session.ModeScenario, ID: id, StartedAt: now,
-		Clusters: []session.ClusterRef{{Name: name, Context: s.Spec.Context, AdminKubeconfig: admin, KubernetesVersion: version}},
+		Clusters: []session.ClusterRef{{Name: name, Context: s.Spec.Context, AdminKubeconfig: admin, KubernetesVersion: version, NodeImage: o.NodeImage}},
 		Tasks:    []session.Task{{Scenario: s.ID, Cluster: name, Weight: s.Spec.Weight}},
 	}
 	// Saved before the cluster exists so that `stop` can clean up even if
@@ -170,12 +173,25 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 	}()
 
 	workers := s.Spec.Cluster.Workers
-	done := l.step("Creating cluster %s (%s, %d node(s))", name, version, 1+workers)
-	cctx, cancel := context.WithTimeout(ctx, createTimeout)
-	err = l.Backend.Create(cctx, backend.ClusterSpec{
+	spec := backend.ClusterSpec{
 		Name: name, KubernetesVersion: version, NodeImage: o.NodeImage, ControlPlanes: 1,
 		Workers: workers, Kubeconfig: admin, KubeadmPatches: s.Spec.Cluster.KindConfigPatches,
-	})
+	}
+	// Prepare gets its own budget so a first-time image build cannot eat
+	// into the cluster create timeout.
+	pctx, cancel := context.WithTimeout(ctx, prepareTimeout)
+	var built func()
+	err = l.Backend.Prepare(pctx, spec, func(msg string) { built = l.step("%s", msg) })
+	cancel()
+	if err != nil {
+		return fmt.Errorf("prepare cluster: %w", err)
+	}
+	if built != nil {
+		built()
+	}
+	done := l.step("Creating cluster %s (%s, %d node(s))", name, version, 1+workers)
+	cctx, cancel := context.WithTimeout(ctx, createTimeout)
+	err = l.Backend.Create(cctx, spec)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("create cluster: %w", err)
@@ -455,7 +471,7 @@ func (l *Lab) Reset(ctx context.Context) error {
 	c, _ := st.Cluster(t.Cluster)
 	opts := StartOptions{}
 	if c != nil {
-		opts.K8sVersion = c.KubernetesVersion
+		opts.K8sVersion, opts.NodeImage = c.KubernetesVersion, c.NodeImage
 	}
 	hints, viewed := t.HintsUsed, t.SolutionViewed
 	if err := l.stopLocked(ctx, st); err != nil {

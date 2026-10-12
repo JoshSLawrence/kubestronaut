@@ -72,10 +72,24 @@ Global flags:
 Exit codes: 0 success or grade passed, 1 grade or validation did not pass,
 2 usage or runtime error, 3 no active session.
 
-`--node-image` overrides the pinned kind node image, and `--keep-on-failure`
-leaves a half-built cluster up so you can inspect it. Each session directory
-contains `setup.log`, which describes the injected fault: do not read it
-before you are done.
+### Node image
+
+The stock kind node image has no editor, but the exam expects you to edit
+manifests and kubelet config on the node. So the first `start` for each
+Kubernetes version builds `kubestronaut/node:<version>-<hash>` locally on top
+of the pinned kind image. It adds `vim`, `nano`, `less`, `etcdctl`, DNS and
+process tools, vim settings for YAML (two-space indent, no tabs), and the `k`
+alias with completion for kubectl. The build usually takes under a minute and
+needs internet once; later starts reuse it. The hash covers the Dockerfile
+(`internal/backend/kind/nodeimage/Dockerfile`) and the base image, so changing
+either rebuilds. `kubestronaut doctor` says whether it is built yet and lists
+old images you can remove.
+
+`--node-image` uses your own image instead and skips the build; it will lack
+the editors unless you add them. `reset` keeps the same image.
+`--keep-on-failure` leaves a half-built cluster up so you can inspect it.
+Each session directory contains `setup.log`, which describes the injected
+fault: do not read it before you are done.
 
 Only one session runs at a time, which keeps Docker memory in check. Exam mode
 (`exam ...`) is planned; see [docs/design.md](docs/design.md).

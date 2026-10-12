@@ -9,10 +9,18 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/JoshSLawrence/kubestronaut/internal/backend"
 	"github.com/JoshSLawrence/kubestronaut/internal/execx"
 	"github.com/JoshSLawrence/kubestronaut/internal/session"
 	"github.com/JoshSLawrence/kubestronaut/internal/ui"
 )
+
+// nodeImageBackend is implemented by backends that build their own node
+// image, so doctor can say whether the first start will need to build it.
+type nodeImageBackend interface {
+	NodeImageBuilt(ctx context.Context, version string) (tag string, built bool, err error)
+	StaleNodeImages(ctx context.Context) ([]string, error)
+}
 
 // minDockerMemory is the smallest Docker memory that comfortably fits one
 // two-node cluster.
@@ -48,7 +56,8 @@ func (a *App) doctorCmd() *cobra.Command {
 				fprintf(w, "  [FAIL] %s: %s -- %s\n", label, detail, remedy)
 			}
 			v, err := first(ctx, r, "docker", "version", "--format", "{{.Server.Version}}")
-			report(err == nil, "docker", orElse(v, err), "start Docker Desktop (or the docker daemon) and retry")
+			dockerOK := err == nil
+			report(dockerOK, "docker", orElse(v, err), "start Docker Desktop (or the docker daemon) and retry")
 			v, err = first(ctx, r, "kind", "version")
 			report(err == nil, "kind", orElse(v, err), "install kind (mise install kind)")
 			v, err = first(ctx, r, "kubectl", "version", "--client")
@@ -64,6 +73,26 @@ func (a *App) doctorCmd() *cobra.Command {
 				return err
 			}
 			be := a.backendFor(store)
+			// With docker down every image answer would be noise under the
+			// docker failure already reported.
+			if ib, ok := be.(nodeImageBackend); ok && dockerOK {
+				tag, built, err := ib.NodeImageBuilt(ctx, backend.DefaultKubernetesVersion)
+				switch {
+				case err != nil:
+					report(false, "node image", err.Error(), "check that docker works")
+				case built:
+					report(true, "node image", tag, "")
+				default:
+					// Not a problem: start builds it. Saying so up front explains
+					// the slower first start and the one-time need for internet.
+					report(true, "node image", tag+" not built yet; the first `start` builds it (needs internet)", "")
+				}
+				if stale, err := ib.StaleNodeImages(ctx); err == nil && len(stale) > 0 {
+					// Informational: old images only cost disk space.
+					fprintf(w, "  [info] %d old node image(s) can be removed: docker rmi %s\n",
+						len(stale), strings.Join(stale, " "))
+				}
+			}
 			clusters, err := be.List(ctx)
 			if err != nil {
 				report(false, "clusters", err.Error(), "check that docker and kind work")

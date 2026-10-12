@@ -538,3 +538,47 @@ func TestSetupCleanupKeepsCheckScripts(t *testing.T) {
 		t.Fatalf("check script was deleted: %v", err)
 	}
 }
+
+func TestStartPreparesNodeImageFirst(t *testing.T) {
+	f := newFixture(t)
+	f.be.PrepareNotify = "Building node image kubestronaut/node:v1.36.4-abc"
+	if err := f.lab.Start(context.Background(), "demo", StartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.be.Prepared) != 1 || f.be.Prepared[0].Name != f.be.Created[0].Name {
+		t.Fatalf("prepare must get the same spec as create: %+v", f.be.Prepared)
+	}
+	out := f.out.String()
+	if b, c := strings.Index(out, "Building node image"), strings.Index(out, "Creating cluster"); b < 0 || c < b {
+		t.Fatalf("the build must be announced before the create:\n%s", out)
+	}
+}
+
+func TestResetKeepsNodeImageOverride(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.lab.Start(ctx, "demo", StartOptions{NodeImage: "my/img:1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.lab.Reset(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.be.Created) != 2 || f.be.Created[1].NodeImage != "my/img:1" || f.be.Prepared[1].NodeImage != "my/img:1" {
+		t.Fatalf("reset must reuse --node-image: %+v", f.be.Created)
+	}
+}
+
+func TestStartPrepareFailureCreatesNothing(t *testing.T) {
+	f := newFixture(t)
+	f.be.PrepareErr = errors.New("no internet")
+	err := f.lab.Start(context.Background(), "demo", StartOptions{})
+	if err == nil || !strings.Contains(err.Error(), "no internet") {
+		t.Fatalf("err: %v", err)
+	}
+	if len(f.be.Created) != 0 {
+		t.Fatal("no cluster may be created when the image is not ready")
+	}
+	if _, err := f.lab.Store.Load(); !errors.Is(err, session.ErrNoSession) {
+		t.Fatal("state must be cleared")
+	}
+}
