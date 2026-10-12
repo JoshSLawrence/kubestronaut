@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -190,6 +191,7 @@ func TestLoadImages(t *testing.T) {
 		t.Fatalf("calls:\n%s", strings.Join(f.Lines(), "\n"))
 	}
 	f.Respond([]string{"kind", "load", "docker-image", "bad:1"}, execx.Result{ExitCode: 1, Stderr: []byte("ctr: failed")}, nil)
+	f.Respond([]string{"docker", "save"}, execx.Result{ExitCode: 1, Stderr: []byte("save failed")}, nil)
 	f.Respond([]string{"docker", "pull", "nopull:1"}, execx.Result{ExitCode: 1, Stderr: []byte("denied")}, nil)
 	f.Respond([]string{"docker", "image", "inspect", "nopull:1"}, execx.Result{ExitCode: 1}, nil)
 	err := k.LoadImages(ctx, "ks-x", []string{"bad:1", "nopull:1", "present:1"})
@@ -205,5 +207,41 @@ func TestLoadImages(t *testing.T) {
 	}
 	if New("/s").Name() != "kind" {
 		t.Fatal("name")
+	}
+}
+
+func TestLoadImagesFallsBackToSinglePlatformSave(t *testing.T) {
+	k, f := newKind()
+	ctx := context.Background()
+	f.Respond([]string{"kind", "load", "docker-image", "multi:1"}, execx.Result{ExitCode: 1, Stderr: []byte("content digest not found")}, nil)
+	f.Respond([]string{"docker", "save"}, execx.Result{Stdout: []byte("TARBALL")}, nil)
+	f.Respond([]string{"kind", "get", "nodes"}, execx.Result{Stdout: []byte("ks-x-control-plane\nks-x-worker\n")}, nil)
+	if err := k.LoadImages(ctx, "ks-x", []string{"multi:1"}); err != nil {
+		t.Fatalf("fallback must rescue the load: %v", err)
+	}
+	var imports []execx.Cmd
+	for _, c := range f.Calls {
+		if c.Name == "docker" && len(c.Args) > 0 && c.Args[0] == "exec" {
+			imports = append(imports, c)
+		}
+	}
+	if len(imports) != 2 || imports[0].Args[3] != "ks-x-control-plane" || imports[1].Args[3] != "ks-x-worker" {
+		t.Fatalf("imports: %+v", imports)
+	}
+	if !strings.Contains(strings.Join(f.Lines(), "\n"), "docker save --platform linux/"+runtime.GOARCH+" multi:1") {
+		t.Fatalf("calls: %v", f.Lines())
+	}
+
+	f.Respond([]string{"docker", "exec", "--privileged"}, execx.Result{ExitCode: 1, Stderr: []byte("ctr broke")}, nil)
+	if err := k.LoadImages(ctx, "ks-x", []string{"multi:1"}); err == nil || !strings.Contains(err.Error(), "ctr broke") {
+		t.Fatalf("import failure must surface: %v", err)
+	}
+	f.Respond([]string{"docker", "exec", "--privileged"}, execx.Result{}, errors.New("no docker"))
+	if err := k.LoadImages(ctx, "ks-x", []string{"multi:1"}); err == nil {
+		t.Fatal("import run error")
+	}
+	f.Respond([]string{"kind", "get", "nodes"}, execx.Result{ExitCode: 1}, nil)
+	if err := k.LoadImages(ctx, "ks-x", []string{"multi:1"}); err == nil {
+		t.Fatal("node listing failure")
 	}
 }

@@ -426,6 +426,17 @@ func TestConnectivity(t *testing.T) {
 	if _, err := run1("expect: denied"); err == nil || !strings.Contains(err.Error(), "did not resolve") {
 		t.Fatalf("DNS failure must be an infra error, got %v", err)
 	}
+	res = execx.Result{ExitCode: 1, Stderr: []byte("REFUSED: connection refused")}
+	if r, err := run1("expect: denied"); err != nil || !r.Passed {
+		t.Fatalf("refused counts as denied: %+v %v", r, err)
+	}
+	res = execx.Result{ExitCode: 1, Stderr: []byte("UNKNOWN: weird")}
+	if _, err := run1("expect: denied"); err == nil || !strings.Contains(err.Error(), "unexpected probe output") {
+		t.Fatalf("unrecognised output must be an infra error: %v", err)
+	}
+	if r, err := run1("expect: allowed"); err != nil || r.Passed {
+		t.Fatalf("unrecognised failure still fails an allowed check: %+v %v", r, err)
+	}
 	res = execx.Result{ExitCode: 1, Stderr: []byte(`Error from server (BadRequest): pod web does not have a host assigned`)}
 	if _, err := run1("expect: denied"); err == nil {
 		t.Fatal("kubectl failure must be an infra error")

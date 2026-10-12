@@ -3,6 +3,7 @@
 package kind
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -196,9 +198,43 @@ func (k *Kind) LoadImages(ctx context.Context, cluster string, images []string) 
 				continue
 			}
 		}
-		if _, err := k.run(ctx, "kind", "load", "docker-image", img, "--name", cluster); err != nil {
-			errs = append(errs, err)
+		_, err = k.run(ctx, "kind", "load", "docker-image", img, "--name", cluster)
+		if err == nil {
+			continue
+		}
+		// With Docker's containerd image store, kind load fails on multi-arch
+		// images because the index references platforms that were never
+		// pulled. A single-platform save sidesteps that.
+		if ferr := k.loadViaSave(ctx, cluster, img); ferr != nil {
+			errs = append(errs, err, ferr)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// loadViaSave streams a single-platform `docker save` into every node.
+func (k *Kind) loadViaSave(ctx context.Context, cluster, img string) error {
+	res, err := k.run(ctx, "docker", "save", "--platform", "linux/"+runtime.GOARCH, img)
+	if err != nil {
+		return err
+	}
+	nodes, err := k.Nodes(ctx, cluster)
+	if err != nil {
+		return err
+	}
+	for _, n := range nodes {
+		r, err := k.Runner.Run(ctx, execx.Cmd{
+			Name: "docker",
+			Args: []string{"exec", "--privileged", "-i", n.Name, "ctr", "--namespace=k8s.io", "images", "import",
+				"--digests", "--snapshotter=overlayfs", "-"},
+			Stdin: bytes.NewReader(res.Stdout),
+		})
+		if err != nil {
+			return fmt.Errorf("import %s into %s: %w", img, n.Alias, err)
+		}
+		if r.ExitCode != 0 {
+			return fmt.Errorf("import %s into %s failed (exit %d): %s", img, n.Alias, r.ExitCode, strings.TrimSpace(string(r.Stderr)))
+		}
+	}
+	return nil
 }

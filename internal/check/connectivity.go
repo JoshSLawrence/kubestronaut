@@ -85,9 +85,15 @@ func (c *connectivity) Run(ctx context.Context, env *Env) (Result, error) {
 		return Result{}, fmt.Errorf("could not exec in %s: %s", describe(c.From), strings.TrimSpace(string(res.Stderr)))
 	}
 	connected := res.ExitCode == 0
-	if !connected && c.Probe == "agnhost" && strings.Contains(out, "DNS") {
-		// A name that does not resolve is not a network policy decision.
-		return Result{}, fmt.Errorf("host %s did not resolve: %s", c.host, strings.TrimSpace(out))
+	if !connected && c.Probe == "agnhost" && c.Expect == "denied" {
+		// Only a timeout or a refusal is a network decision. A name that does
+		// not resolve, or anything unrecognised, must not read as "denied".
+		switch {
+		case strings.Contains(out, "DNS"):
+			return Result{}, fmt.Errorf("host %s did not resolve: %s", c.host, strings.TrimSpace(out))
+		case !strings.Contains(out, "TIMEOUT") && !strings.Contains(out, "REFUSED"):
+			return Result{}, fmt.Errorf("unexpected probe output from %s: %q", describe(c.From), strings.TrimSpace(out))
+		}
 	}
 	switch {
 	case c.Expect == "allowed" && !connected:

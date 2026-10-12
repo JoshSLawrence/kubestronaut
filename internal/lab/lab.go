@@ -184,7 +184,7 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 		cancel()
 		if lerr != nil {
 			// Not fatal: the nodes pull whatever is missing themselves.
-			ui.Warn(l.Out, "image preload failed, nodes will pull images on demand: %v", lerr)
+			ui.Warn(l.Out, "image preload failed, nodes will pull images on demand: %s", firstLine(lerr))
 		}
 		done()
 	}
@@ -588,4 +588,8 @@ func (l *Lab) SSH(ctx context.Context, clusterOverride, alias string, argv []str
 	_, _ = stdout.Write(res.Stdout)
 	_, _ = stderr.Write(res.Stderr)
 	return res.ExitCode, nil
+}
+
+func firstLine(err error) string {
+	return strings.SplitN(err.Error(), "\n", 2)[0]
 }
