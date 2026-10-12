@@ -102,6 +102,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 
 | Id                                   | Domain               | Nodes | Time |
 | ------------------------------------ | -------------------- | ----- | ---- |
+| `cka/cni-install-calico`             | cluster-architecture | 3     | 15m  |
 | `cka/configmap-secret-env`           | workloads-scheduling | 1     | 10m  |
 | `cka/crd-operator-cert-manager`      | cluster-architecture | 2     | 15m  |
 | `cka/deployment-rollout-rollback`    | workloads-scheduling | 1     | 8m   |
