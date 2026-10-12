@@ -113,6 +113,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/hpa-autoscale`                  | workloads-scheduling | 2     | 10m  |
 | `cka/ingress-traefik`                | services-networking  | 2     | 12m  |
 | `cka/kubeadm-certs-renew`            | cluster-architecture | 1     | 10m  |
+| `cka/kubeadm-join-node`              | cluster-architecture | 2     | 12m  |
 | `cka/kustomize-overlay`              | cluster-architecture | 2     | 12m  |
 | `cka/monitor-resource-usage`         | troubleshooting      | 2     | 8m   |
 | `cka/networkpolicy-isolate`          | services-networking  | 1     | 10m  |

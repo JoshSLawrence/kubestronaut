@@ -1,0 +1,77 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: kubeadm-join-node
+  title: Join a new worker node with kubeadm
+  domain: cluster-architecture
+  difficulty: hard
+  tags: [kubeadm, join, bootstrap-token, cluster-lifecycle]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-join
+  namespaces: [edge]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubeadm token create --help` shows how to set a lifetime and how to
+      print the whole join command."
+    - The join command is run on the node that joins, not on the control plane.
+  setup:
+    - script: setup/reset-node01.sh
+    - manifest: setup/pinned.yaml
+  checks:
+    - id: node01-ready
+      description: node01 is a Ready node of the cluster
+      weight: 2
+      type: ready
+      ref: {kind: node, name: '{{node "node01"}}'}
+      retry: {attempts: 20, interval: 3s}
+    - id: node01-rejoined
+      description: node01 registered with the cluster again
+      type: script
+      path: checks/rejoined.sh
+    - id: node01-worker
+      description: node01 has no control-plane role
+      type: count
+      ref:
+        kind: node
+        selector: 'kubernetes.io/hostname={{node "node01"}},!node-role.kubernetes.io/control-plane'
+      eq: 1
+      retry: {attempts: 5, interval: 3s}
+    - id: node01-kubelet-creds
+      description: the kubelet on node01 authenticates to the API server with its own client certificate
+      type: nodeExec
+      node: node01
+      shell: |
+        test -s /var/lib/kubelet/pki/kubelet-client-current.pem
+        grep -q 'server: https://' /etc/kubernetes/kubelet.conf
+    - id: pinned-ready
+      description: deployment edge/pinned is available
+      weight: 2
+      type: ready
+      ref: {kind: deployment, name: pinned, namespace: edge}
+      retry: {attempts: 10, interval: 3s}
+    - id: pinned-on-node01
+      description: every pod of deployment edge/pinned runs on node01
+      type: jsonPath
+      ref: {kind: pod, namespace: edge, selector: app=pinned}
+      match: all
+      minItems: 1
+      path: '{.spec.nodeName}'
+      equals: '{{node "node01"}}'
+      retry: {attempts: 5, interval: 3s}
+    - id: join-file-valid
+      description: /root/node01-join.sh holds a working join command for a token that lives 2 hours
+      weight: 3
+      type: script
+      path: checks/join-valid.sh
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    timeout: 15m
