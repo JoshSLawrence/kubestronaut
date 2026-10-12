@@ -1,0 +1,111 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: gateway-migrate-ingress-tls
+  title: Migrate an Ingress to the Gateway API with TLS
+  domain: services-networking
+  difficulty: hard
+  tags: [gateway-api, ingress, tls, traefik]
+spec:
+  timeLimit: 15m
+  weight: 7
+  context: k8s-gwtls
+  namespaces: [traefik, web]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - docker.io/traefik:v3.7.14
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl explain gateway.spec.listeners.tls` shows how a listener
+      refers to a Secret."
+    - The HTTPRoute status says whether the Gateway accepted it.
+  setup:
+    - manifest: setup/namespaces.yaml
+    - script: setup/gateway.sh
+      timeout: 6m
+    - manifest: setup/app.yaml
+    - wait:
+        ref: {kind: deployment, name: web, namespace: web}
+        for: condition=Available
+    - script: setup/tls.sh
+      timeout: 3m
+  checks:
+    - id: gateway-listener
+      description: Gateway web/web-gateway has an HTTPS listener on port 8443 for web.example.local that terminates TLS with web-tls
+      weight: 2
+      type: jsonPath
+      ref: {kind: gateway, name: web-gateway, namespace: web}
+      path: '{.spec.gatewayClassName}/{.spec.listeners[?(@.protocol=="HTTPS")].port}/{.spec.listeners[?(@.protocol=="HTTPS")].hostname}/{.spec.listeners[?(@.protocol=="HTTPS")].tls.mode}/{.spec.listeners[?(@.protocol=="HTTPS")].tls.certificateRefs[*].name}'
+      matches: '^traefik/8443/web\.example\.local/(Terminate)?/web-tls$'
+    - id: gateway-programmed
+      description: Gateway web/web-gateway is programmed
+      type: jsonPath
+      ref: {kind: gateway, name: web-gateway, namespace: web}
+      path: '{.status.conditions[?(@.type=="Programmed")].status}'
+      equals: "True"
+      retry: {attempts: 5, interval: 2s}
+    - id: route-accepted
+      description: HTTPRoute web/web-route is accepted by Gateway web-gateway and its backend is resolved
+      weight: 2
+      type: jsonPath
+      ref: {kind: httproute, name: web-route, namespace: web}
+      path: '{.status.parents[?(@.parentRef.name=="web-gateway")].conditions[?(@.type=="Accepted")].status}/{.status.parents[?(@.parentRef.name=="web-gateway")].conditions[?(@.type=="ResolvedRefs")].status}'
+      equals: "True/True"
+      retry: {attempts: 5, interval: 2s}
+    - id: ingress-gone
+      description: no Ingress exists in the cluster any more
+      type: count
+      ref: {kind: ingress, allNamespaces: true}
+      eq: 0
+    - id: https-traffic
+      description: https://web.example.local on port 30443 reaches the web backend
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 20s
+      retry: {attempts: 5, interval: 2s}
+      shell: |
+        # An Ingress would answer the same requests, so none may be left.
+        left=$(kubectl get ingress -A -o name)
+        if [ -n "$left" ]; then
+          echo "$left still exists and could be what answers" >&2
+          exit 1
+        fi
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        for path in / /index.html /a/b/c; do
+          body=$(curl -sk --max-time 5 --resolve "web.example.local:30443:$ip" "https://web.example.local:30443$path" || true)
+          if [ "$body" != "web" ]; then
+            echo "https $path answered '$body', want 'web'" >&2
+            exit 1
+          fi
+        done
+    - id: served-certificate
+      description: port 30443 serves the original certificate for web.example.local
+      weight: 2
+      type: script
+      path: checks/served-cert.sh
+      retry: {attempts: 5, interval: 2s}
+    - id: other-host-unrouted
+      description: requests for another host are not routed to the backend
+      type: nodeExec
+      node: controlplane
+      timeout: 20s
+      retry: {attempts: 4, interval: 2s}
+      shell: |
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 --resolve "other.example.local:30443:$ip" "https://other.example.local:30443/" || true)
+        if [ "$code" != "404" ]; then
+          echo "host other.example.local answered $code, want 404" >&2
+          exit 1
+        fi
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [other-host-unrouted]
+    timeout: 15m

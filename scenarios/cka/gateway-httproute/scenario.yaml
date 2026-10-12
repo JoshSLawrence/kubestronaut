@@ -1,0 +1,137 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: gateway-httproute
+  title: Route and split traffic with the Gateway API
+  domain: services-networking
+  difficulty: medium
+  tags: [gateway-api, httproute, traefik]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-gateway
+  namespaces: [infra, shop, traefik]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - docker.io/traefik:v3.7.14
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl explain httproute.spec.rules` lists matches, filters and
+      backendRefs. The route's `status` says why a Gateway did or did not
+      accept it."
+    - A Gateway decides which namespaces may attach routes. Look at its
+      listener.
+  setup:
+    - manifest: setup/namespaces.yaml
+    - script: setup/gateway.sh
+      timeout: 6m
+    - manifest: setup/apps.yaml
+    - wait:
+        ref: {kind: deployment, name: api-v1, namespace: shop}
+        for: condition=Available
+    - wait:
+        ref: {kind: deployment, name: api-v2, namespace: shop}
+        for: condition=Available
+  checks:
+    - id: route-accepted
+      description: HTTPRoute shop/api is accepted by its Gateway
+      weight: 2
+      type: jsonPath
+      ref: {kind: httproute, name: api, namespace: shop}
+      path: '{.status.parents[*].conditions[?(@.type=="Accepted")].status}'
+      equals: "True"
+      retry: {attempts: 5, interval: 2s}
+    - id: route-resolved
+      description: the backends of HTTPRoute shop/api are resolved
+      type: jsonPath
+      ref: {kind: httproute, name: api, namespace: shop}
+      path: '{.status.parents[*].conditions[?(@.type=="ResolvedRefs")].status}'
+      equals: "True"
+    - id: route-parent
+      description: HTTPRoute shop/api is attached to Gateway infra/web-gw for api.example.local
+      type: jsonPath
+      ref: {kind: httproute, name: api, namespace: shop}
+      path: '{.spec.parentRefs[*].namespace}/{.spec.parentRefs[*].name}/{.spec.hostnames[*]}'
+      equals: infra/web-gw/api.example.local
+    - id: split-weights
+      description: the rule for requests without the header splits traffic between api-v1 and api-v2 in the ratio 9 to 1
+      weight: 2
+      type: script
+      path: checks/weights.sh
+    - id: canary-traffic
+      description: requests for /api with the header x-canary set to true are answered only by api-v2
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 30s
+      retry: {attempts: 5, interval: 2s}
+      shell: |
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        for _ in $(seq 10); do
+          body=$(curl -s --max-time 5 -H 'Host: api.example.local' -H 'x-canary: true' "http://$ip:30080/api/items" || true)
+          if [ "$body" != "v2" ]; then
+            echo "canary request answered '$body', want 'v2'" >&2
+            exit 1
+          fi
+        done
+    - id: default-traffic
+      description: other requests for /api are answered mostly by api-v1 and sometimes by api-v2
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 60s
+      retry: {attempts: 3, interval: 2s}
+      shell: |
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        v1=0
+        v2=0
+        for _ in $(seq 60); do
+          body=$(curl -s --max-time 5 -H 'Host: api.example.local' "http://$ip:30080/api/items" || true)
+          case "$body" in
+            v1) v1=$((v1 + 1)) ;;
+            v2) v2=$((v2 + 1)) ;;
+            *)
+              echo "request answered '$body', want v1 or v2" >&2
+              exit 1
+              ;;
+          esac
+        done
+        echo "v1=$v1 v2=$v2" >&2
+        # 10% of 60 is 6; 50/50 would average 30, so 20 is far from both. A
+        # route that never sends to api-v2 is not a split at all.
+        test "$v1" -ge 40
+        test "$v2" -ge 1
+        test "$v2" -le 20
+    - id: scoped-to-host-and-path
+      description: other hosts and paths are not routed to the backends
+      type: nodeExec
+      node: controlplane
+      timeout: 20s
+      retry: {attempts: 4, interval: 2s}
+      shell: |
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        for spec in "other.example.local /api" "api.example.local /other"; do
+          set -- $spec
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H "Host: $1" "http://$ip:30080$2" || true)
+          if [ "$code" != "404" ]; then
+            echo "host $1 path $2 answered $code, want 404" >&2
+            exit 1
+          fi
+        done
+    - id: gateway-unchanged
+      description: Gateway infra/web-gw is the original and still limits routes to labelled namespaces
+      weight: 2
+      type: script
+      path: checks/gateway-unchanged.sh
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [scoped-to-host-and-path, gateway-unchanged]
+    timeout: 15m

@@ -3,6 +3,15 @@
 # destination (relative to the repository root); a Go test checks that the
 # copies still match. Fields are separated by whitespace:
 #   name  version  sha256  url  destination...
+# A url of the form render:<name> means the file is rendered by
+# mise-tasks/vendor from the verified download of the entry <name>, which must
+# be listed first; the sha256 is that of the rendered output.
 metrics-server v0.9.0 1cec29a5267809306a2c6ec74a3e449abbb705b4a8beed0c8a1963910f72c79b https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.0/components.yaml scenarios/cka/hpa-autoscale/files/metrics-server.yaml scenarios/cka/kustomize-overlay/files/base/components.yaml scenarios/cka/monitor-resource-usage/files/metrics-server.yaml
 cert-manager v1.21.2 e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml scenarios/cka/crd-operator-cert-manager/files/cert-manager.yaml
 traefik-chart 41.7.1 f9edd5ca699ff0f5eab14df6e4feefa15f7597a9b56f0b1c01f6089b1eecbaf1 https://traefik.github.io/charts/traefik/traefik-41.7.1.tgz scenarios/cka/helm-install-rollback/files/charts/traefik-41.7.1.tgz
+traefik-ingress 41.7.1 74b19e685dcc111f45a7069c044f515ee96d30f1f81cd0252ff2a0f5c4be0a4d render:traefik-chart scenarios/cka/ingress-traefik/files/traefik.yaml
+traefik-gateway 41.7.1 04115dcf11e55e50d7f4a1b13461fc6c1e0d80c4a9027ef11d431164a23db432 render:traefik-chart scenarios/cka/gateway-httproute/files/traefik.yaml scenarios/cka/gateway-migrate-ingress-tls/files/traefik.yaml
+gateway-api v1.6.3 356c2b8e286a964dc20995435659ad1095386329974793af10bbfe3eff977fe5 https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.3/standard-install.yaml scenarios/cka/gateway-httproute/files/gateway-api.yaml scenarios/cka/gateway-migrate-ingress-tls/files/gateway-api.yaml
+metallb v0.16.0 b0b9be2802f10aa32d45308b4457d06cde0c70544712c8d0cf5511657ffd2b69 https://raw.githubusercontent.com/metallb/metallb/v0.16.0/config/manifests/metallb-native.yaml scenarios/cka/service-expose-types/files/metallb-native.yaml
+calico v3.33.0 2de8f47595fb9c41b3f47d7b767a1f8e72ecf84057af834738ff12689a234da5 https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml scenarios/cka/cni-install-calico/files/calico.yaml
+flannel v0.28.10 393bdbce53eb50c8eb97dd513b218518b7d6e7985dc7b889be956e112a711084 https://github.com/flannel-io/flannel/releases/download/v0.28.10/kube-flannel.yml scenarios/cka/cni-install-calico/files/kube-flannel.yml

@@ -42,6 +42,23 @@ func TestCreateCommand(t *testing.T) {
 	}
 }
 
+func TestCreateWithoutCNIDoesNotWait(t *testing.T) {
+	k, f := newKind()
+	kc := filepath.Join(t.TempDir(), "sess", "admin.kubeconfig")
+	err := k.Create(context.Background(), backend.ClusterSpec{Name: "ks-cka-x", Kubeconfig: kc, DisableDefaultCNI: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := f.Lines()
+	if got := lines[len(lines)-1]; !strings.HasSuffix(got, " --wait 0s") {
+		t.Fatalf("a cluster without a CNI cannot become Ready, so kind must not wait: %s", got)
+	}
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(kc), "kind-ks-cka-x.yaml"))
+	if err != nil || !strings.Contains(string(b), "disableDefaultCNI: true") {
+		t.Fatalf("config file: %q %v", b, err)
+	}
+}
+
 func TestCreateRejectsForeignAndBadVersion(t *testing.T) {
 	k, f := newKind()
 	if err := k.Create(context.Background(), backend.ClusterSpec{Name: "mine"}); err == nil {

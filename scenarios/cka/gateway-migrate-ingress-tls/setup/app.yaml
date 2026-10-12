@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: registry.k8s.io/e2e-test-images/agnhost:2.61
+          args: [porter]
+          env:
+            - name: SERVE_PORT_8081
+              value: web
+          ports:
+            - containerPort: 8081
+          readinessProbe:
+            tcpSocket: {port: 8081}
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: web
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8081

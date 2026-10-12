@@ -17,6 +17,28 @@ sha256_of() {
   fi
 }
 
+# Renders the Traefik chart the way the scenarios install it: the same NodePort
+# Services (30080/30443), no CRDs, no default IngressClass and no dashboard.
+# $1 is the chart, $2 whether the Gateway API provider is on. The chart's own
+# Gateway is off because the learner or the scenario setup creates the Gateway.
+render_traefik() {
+  command -v helm >/dev/null 2>&1 ||
+    die "helm is not on PATH: run via 'mise run vendor' so mise provides the pinned version"
+  helm template edge "$1" --namespace traefik --skip-crds --kube-version v1.36.4 \
+    --set service.spec.type=NodePort \
+    --set ports.web.nodePort=30080 \
+    --set ports.websecure.nodePort=30443 \
+    --set ingressClass.name=traefik \
+    --set ingressClass.isDefaultClass=false \
+    --set providers.kubernetesIngress.ingressClass=traefik \
+    --set providers.kubernetesIngress.strictPrefixMatching=true \
+    --set api.dashboard=false \
+    --set gateway.enabled=false \
+    --set providers.kubernetesCRD.enabled=false \
+    --set providers.kubernetesIngress.enabled=true \
+    --set "providers.kubernetesGateway.enabled=$2"
+}
+
 root=${MISE_PROJECT_ROOT:?run via 'mise run vendor'}
 lock="$root/scenarios/cka/vendor.lock"
 [ -f "$lock" ] || die "missing $lock"
@@ -26,13 +48,29 @@ trap 'rm -rf "$tmp"' EXIT
 while read -r name version want url dests; do
   case "$name" in '' | '#'*) continue ;; esac
   [ -n "$dests" ] || die "$name: no destination in the lock"
-  log "downloading $name $version"
   file="$tmp/$name"
-  curl -fsSL --retry 3 -o "$file" "$url" ||
-    die "$name: download of $url failed: check the url and your network, then retry"
+  case "$url" in
+    render:*)
+      # Derived from a chart listed earlier in the lock, which has already
+      # been verified, so the output is pinned too.
+      chart="$tmp/${url#render:}"
+      [ -f "$chart" ] || die "$name: $url must name an entry listed earlier in the lock"
+      log "rendering $name $version"
+      case "$name" in
+        traefik-ingress) render_traefik "$chart" false >"$file" ;;
+        traefik-gateway) render_traefik "$chart" true >"$file" ;;
+        *) die "$name: no render recipe in mise-tasks/vendor" ;;
+      esac
+      ;;
+    *)
+      log "downloading $name $version"
+      curl -fsSL --retry 3 -o "$file" "$url" ||
+        die "$name: download of $url failed: check the url and your network, then retry"
+      ;;
+  esac
   got=$(sha256_of "$file")
   if [ "$got" != "$want" ]; then
-    die "$name $version: sha256 is $got, the lock says $want: if the upstream file was rebuilt, review it before updating the lock"
+    die "$name $version: sha256 is $got, the lock says $want: if the upstream file was rebuilt, review it before updating the lock (for a render: entry, a different Helm version than the one in mise.toml also changes the output)"
   fi
   if [ "${usage_check:-false}" = "true" ]; then
     continue

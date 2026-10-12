@@ -102,17 +102,22 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 
 | Id                                   | Domain               | Nodes | Time |
 | ------------------------------------ | -------------------- | ----- | ---- |
+| `cka/cni-install-calico`             | cluster-architecture | 3     | 15m  |
 | `cka/configmap-secret-env`           | workloads-scheduling | 1     | 10m  |
 | `cka/crd-operator-cert-manager`      | cluster-architecture | 2     | 15m  |
 | `cka/deployment-rollout-rollback`    | workloads-scheduling | 1     | 8m   |
 | `cka/etcd-backup-restore`            | cluster-architecture | 1     | 15m  |
+| `cka/gateway-httproute`              | services-networking  | 2     | 12m  |
+| `cka/gateway-migrate-ingress-tls`    | services-networking  | 2     | 15m  |
 | `cka/helm-install-rollback`          | cluster-architecture | 1     | 12m  |
 | `cka/hpa-autoscale`                  | workloads-scheduling | 2     | 10m  |
+| `cka/ingress-traefik`                | services-networking  | 2     | 12m  |
 | `cka/kubeadm-certs-renew`            | cluster-architecture | 1     | 10m  |
 | `cka/kustomize-overlay`              | cluster-architecture | 2     | 12m  |
 | `cka/monitor-resource-usage`         | troubleshooting      | 2     | 8m   |
 | `cka/networkpolicy-isolate`          | services-networking  | 1     | 10m  |
 | `cka/networkpolicy-least-permissive` | services-networking  | 1     | 8m   |
+| `cka/node-infra-prep`                | cluster-architecture | 2     | 12m  |
 | `cka/node-maintenance-drain`         | cluster-architecture | 3     | 10m  |
 | `cka/priorityclass-preemption`       | workloads-scheduling | 1     | 10m  |
 | `cka/quota-limitrange`               | workloads-scheduling | 1     | 10m  |
@@ -120,6 +125,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/rbac-user-csr`                  | cluster-architecture | 1     | 12m  |
 | `cka/scheduling-taints-affinity`     | workloads-scheduling | 3     | 10m  |
 | `cka/sidecar-init-probes`            | workloads-scheduling | 1     | 12m  |
+| `cka/service-expose-types`           | services-networking  | 2     | 12m  |
 | `cka/storage-pv-pvc`                 | storage              | 1     | 8m   |
 | `cka/storage-pvc-pending`            | storage              | 1     | 10m  |
 | `cka/storageclass-dynamic`           | storage              | 1     | 10m  |

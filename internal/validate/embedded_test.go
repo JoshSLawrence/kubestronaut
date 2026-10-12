@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/JoshSLawrence/kubestronaut/internal/scenario"
 	"github.com/JoshSLawrence/kubestronaut/scenarios"
@@ -29,7 +30,7 @@ var knownKinds = map[string]bool{
 	"apiservice": true, "certificate": true, "certificatesigningrequest": true,
 	"clusterissuer": true, "clusterrole": true, "clusterrolebinding": true,
 	"configmap": true, "customresourcedefinition": true, "daemonset": true,
-	"deployment": true, "endpointslice": true, "horizontalpodautoscaler": true,
+	"deployment": true, "endpointslice": true, "gatewayclass": true, "gateway": true, "horizontalpodautoscaler": true, "httproute": true, "ingress": true,
 	"limitrange": true, "networkpolicy": true, "node": true, "persistentvolume": true,
 	"persistentvolumeclaim": true, "pod": true, "poddisruptionbudget": true,
 	"priorityclass": true, "resourcequota": true, "role": true, "rolebinding": true,
@@ -68,6 +69,18 @@ func TestEmbeddedKindsAreKnown(t *testing.T) {
 			if !knownKinds[strings.ToLower(k)] {
 				t.Errorf("%s: kind %q is not in knownKinds: fix the typo, or add the kind there", s.ID, k)
 			}
+		}
+	}
+}
+
+// The e2e CI job timeout (docs/design.md section 8) is sized for scenarios of
+// at most this long; raise the job timeout together with this cap.
+func TestValidationTimeoutsFitCI(t *testing.T) {
+	const limit = 30 * time.Minute
+	cat := scenario.LoadCatalog(scenarios.FS)
+	for _, s := range cat.Scenarios {
+		if d := s.Spec.Validation.Timeout.D(); d > limit {
+			t.Errorf("%s: validation.timeout %s exceeds %s: raise the e2e job timeout in .github/workflows/e2e.yml first", s.ID, d, limit)
 		}
 	}
 }

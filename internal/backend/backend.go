@@ -29,6 +29,9 @@ type ClusterSpec struct {
 	Workers           int
 	Kubeconfig        string // path the admin kubeconfig is written to
 	KubeadmPatches    []string
+	// DisableDefaultCNI creates the cluster without a CNI plugin. The nodes
+	// cannot become Ready, so Create must not wait for them.
+	DisableDefaultCNI bool
 }
 
 // Node is one cluster node.

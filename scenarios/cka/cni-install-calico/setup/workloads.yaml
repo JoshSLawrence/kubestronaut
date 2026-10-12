@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: server
+  namespace: net-test
+  labels:
+    app: server
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: '{{node "node01"}}'
+  containers:
+    - name: server
+      image: registry.k8s.io/e2e-test-images/agnhost:2.61
+      args: [netexec, --http-port=8080, --udp-port=-1]
+      ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: net-test
+spec:
+  selector:
+    app: server
+  ports:
+    - port: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+  namespace: net-test
+  labels:
+    app: client
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: '{{node "node02"}}'
+  containers:
+    - name: client
+      image: registry.k8s.io/e2e-test-images/agnhost:2.61
+      args: [pause]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vault
+  namespace: secure
+  labels:
+    app: vault
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: '{{node "node01"}}'
+  containers:
+    - name: vault
+      image: registry.k8s.io/e2e-test-images/agnhost:2.61
+      args: [netexec, --http-port=8080, --udp-port=-1]
+      ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: secure
+spec:
+  selector:
+    app: vault
+  ports:
+    - port: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: friend
+  namespace: secure
+  labels:
+    app: friend
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: '{{node "node02"}}'
+  containers:
+    - name: friend
+      image: registry.k8s.io/e2e-test-images/agnhost:2.61
+      args: [pause]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-from-net-test
+  namespace: secure
+spec:
+  podSelector:
+    matchLabels:
+      app: vault
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: secure

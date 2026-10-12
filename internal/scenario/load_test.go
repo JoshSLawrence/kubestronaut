@@ -165,6 +165,19 @@ func TestStrictDecodeRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestClusterNetworkingDecodes(t *testing.T) {
+	f := goodFS()
+	f["cka/demo/scenario.yaml"] = &fstest.MapFile{Data: []byte(strings.Replace(goodScenario, "cluster: {workers: 1}", "cluster: {workers: 1, networking: {disableDefaultCNI: true}}", 1))}
+	c := LoadCatalog(f)
+	if len(c.Problems) != 0 || !c.Scenarios[0].Spec.Cluster.Networking.DisableDefaultCNI {
+		t.Fatalf("problems: %v", c.Problems)
+	}
+	f["cka/demo/scenario.yaml"] = &fstest.MapFile{Data: []byte(strings.Replace(goodScenario, "cluster: {workers: 1}", "cluster: {networking: {bogus: true}}", 1))}
+	if c := LoadCatalog(f); len(c.Problems) != 1 || !strings.Contains(c.Problems[0].Error(), "unknown field") {
+		t.Fatalf("networking must be strictly decoded: %v", c.Problems)
+	}
+}
+
 func TestLoadProblems(t *testing.T) {
 	tests := map[string]fstest.MapFS{
 		"bad pack yaml":    {"cka/pack.yaml": {Data: []byte("kind: [")}},

@@ -32,7 +32,7 @@ func TestVendoredFilesMatchLock(t *testing.T) {
 		}
 		name, want, url, dests := f[0], f[2], f[3], f[4:]
 		entries++
-		if len(want) != 64 || !strings.HasPrefix(url, "https://") {
+		if len(want) != 64 || (!strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "render:")) {
 			t.Errorf("%s: malformed sha256 or url", name)
 		}
 		for _, d := range dests {

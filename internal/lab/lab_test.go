@@ -34,7 +34,7 @@ spec:
   timeLimit: 10m
   weight: 7
   context: k8s-demo
-  cluster: {workers: 1}
+  cluster: {workers: 1, networking: {disableDefaultCNI: true}}
   images: [registry.example/agnhost:1]
   prompt: prompt.md
   hints: [first hint, second hint]
@@ -103,7 +103,7 @@ func TestStartHappyPath(t *testing.T) {
 		t.Fatalf("created: %+v", f.be.Created)
 	}
 	c := f.be.Created[0]
-	if c.Name != "ks-cka-demo" || c.Workers != 1 || c.KubernetesVersion != "v1.36.4" || !strings.HasSuffix(c.Kubeconfig, "admin.kubeconfig") {
+	if c.Name != "ks-cka-demo" || c.Workers != 1 || c.KubernetesVersion != "v1.36.4" || !c.DisableDefaultCNI || !strings.HasSuffix(c.Kubeconfig, "admin.kubeconfig") {
 		t.Fatalf("spec: %+v", c)
 	}
 	if got := f.be.Loaded["ks-cka-demo"]; len(got) != 1 {

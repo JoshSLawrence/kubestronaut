@@ -1,0 +1,102 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: node-infra-prep
+  title: Prepare a node's kernel settings, packages and runtime tools
+  domain: cluster-architecture
+  difficulty: medium
+  tags: [sysctl, kernel-modules, dpkg, crictl]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-infra
+  namespaces: [infra]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - "`sysctl --system` loads every file under /etc/sysctl.d."
+    - "`crictl --help` and `man crictl` are not needed: the tool reads its
+      defaults from /etc/crictl.yaml."
+  setup:
+    - manifest: setup/workloads.yaml
+    - wait:
+        ref: {kind: pod, name: probe, namespace: infra}
+        for: condition=Ready
+    - wait:
+        ref: {kind: pod, name: echo, namespace: infra}
+        for: condition=Ready
+    - script: setup/break-node.sh
+      timeout: 3m
+  checks:
+    - id: forward-live
+      description: IPv4 forwarding is enabled on node01 right now
+      type: nodeExec
+      node: node01
+      command: [sysctl, -n, net.ipv4.ip_forward]
+      stdoutMatches: '^1\s*$'
+    - id: bridge-nf-live
+      description: bridged traffic is passed to iptables on node01 right now
+      type: nodeExec
+      node: node01
+      shell: |
+        # Some Docker hosts do not offer the setting inside a container.
+        [ -e /proc/sys/net/bridge/bridge-nf-call-iptables ] || exit 0
+        test "$(sysctl -n net.bridge.bridge-nf-call-iptables)" = 1
+    - id: sysctl-persisted
+      description: /etc/sysctl.d/99-kubernetes.conf on node01 enables both settings
+      type: nodeExec
+      node: node01
+      shell: |
+        f=/etc/sysctl.d/99-kubernetes.conf
+        grep -Eq '^[[:space:]]*net\.ipv4\.ip_forward[[:space:]]*=[[:space:]]*1[[:space:]]*$' "$f"
+        grep -Eq '^[[:space:]]*net\.bridge\.bridge-nf-call-iptables[[:space:]]*=[[:space:]]*1[[:space:]]*$' "$f"
+    - id: modules-persisted
+      description: /etc/modules-load.d/k8s.conf on node01 lists both modules
+      type: nodeExec
+      node: node01
+      shell: |
+        f=/etc/modules-load.d/k8s.conf
+        grep -Eq '^[[:space:]]*overlay[[:space:]]*$' "$f"
+        grep -Eq '^[[:space:]]*br_netfilter[[:space:]]*$' "$f"
+    - id: pkg-installed
+      description: the package ipvsadm is installed on node01
+      type: nodeExec
+      node: node01
+      command: [dpkg-query, -W, '-f=${Status}', ipvsadm]
+      stdoutContains: install ok installed
+    - id: crictl-works
+      description: crictl ps works on node01 without extra flags
+      type: nodeExec
+      node: node01
+      command: [crictl, ps, -q]
+    - id: runtime-file
+      description: /root/runtime.txt on node01 holds the runtime's name and version as the runtime reports them
+      weight: 2
+      type: nodeExec
+      node: node01
+      shell: |
+        # Accept the version with or without its leading "v".
+        want=$(crictl version | awk '/^RuntimeName:/ {n = $2} /^RuntimeVersion:/ {v = $2} END {print n, v}' | sed 's/ v/ /')
+        got=$(tr -s '[:space:]' ' ' </root/runtime.txt | sed 's/^ //; s/ $//; s/ v/ /')
+        test -n "$want"
+        test "$got" = "$want"
+    - id: cross-node
+      description: infra/probe on node01 reaches Service infra/echo, whose pod runs on controlplane
+      weight: 2
+      type: podExec
+      ref: {kind: pod, name: probe, namespace: infra}
+      # The address comes from the environment, so the check does not wait
+      # for DNS answers that cannot arrive while the node drops traffic.
+      shell: nc -z -w 3 "$ECHO_SERVICE_HOST" 8080
+      retry: {attempts: 4, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [bridge-nf-live]
+    timeout: 15m

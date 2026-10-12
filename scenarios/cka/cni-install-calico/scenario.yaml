@@ -1,0 +1,96 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: cni-install-calico
+  title: Install a CNI plugin that enforces NetworkPolicy
+  domain: cluster-architecture
+  difficulty: hard
+  tags: [cni, calico, flannel, networkpolicy]
+spec:
+  timeLimit: 15m
+  weight: 7
+  context: k8s-cni
+  namespaces: [net-test, secure]
+  exclusive: true
+  cluster:
+    workers: 2
+    networking:
+      disableDefaultCNI: true
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+    - quay.io/calico/calico:v3.33.0
+    - quay.io/calico/node:v3.33.0
+    - quay.io/calico/third-party-cni-plugins:v3.33.0
+    - ghcr.io/flannel-io/flannel:v0.28.10
+    - ghcr.io/flannel-io/flannel-cni-plugin:v1.9.1-flannel3
+  prompt: prompt.md
+  hints:
+    - Pods stay Pending and nodes NotReady until a plugin has written its
+      configuration to /etc/cni/net.d on each node.
+    - Not every CNI plugin implements NetworkPolicy.
+  setup:
+    - script: setup/prepare.sh
+      timeout: 4m
+    - manifest: setup/namespaces.yaml
+    # Pods are refused until the namespace's default ServiceAccount exists.
+    - wait:
+        ref: {kind: serviceaccount, name: default, namespace: net-test}
+        for: create
+    - wait:
+        ref: {kind: serviceaccount, name: default, namespace: secure}
+        for: create
+    - manifest: setup/workloads.yaml
+    - script: setup/policy-answer.sh
+  checks:
+    - id: nodes-ready
+      description: all 3 nodes are Ready
+      weight: 2
+      type: ready
+      ref: {kind: node}
+      minReady: 3
+      retry: {attempts: 10, interval: 3s}
+    - id: calico-installed
+      description: one of the offered CNI manifests is installed
+      type: count
+      ref: {kind: daemonset, namespace: kube-system, selector: k8s-app=calico-node}
+      gte: 1
+      retry: {attempts: 3, interval: 3s}
+    - id: coredns-ready
+      description: Deployment kube-system/coredns has all its replicas ready
+      type: ready
+      ref: {kind: deployment, name: coredns, namespace: kube-system}
+      retry: {attempts: 6, interval: 3s}
+    - id: cross-node-allowed
+      description: net-test/client reaches net-test/server on another node
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: client, namespace: net-test}
+      to: server.net-test.svc.cluster.local:8080
+      expect: allowed
+      retry: {attempts: 3, interval: 3s}
+    - id: same-namespace-allowed
+      description: secure/friend reaches secure/vault
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: friend, namespace: secure}
+      to: vault.secure.svc.cluster.local:8080
+      expect: allowed
+      retry: {attempts: 3, interval: 3s}
+    - id: policy-enforced
+      description: net-test/client cannot reach secure/vault
+      weight: 3
+      type: connectivity
+      from: {kind: pod, name: client, namespace: net-test}
+      to: vault.secure.svc.cluster.local:8080
+      expect: denied
+      retry: {attempts: 3, interval: 3s}
+    - id: policy-untouched
+      description: NetworkPolicy secure/deny-from-net-test is unchanged
+      type: script
+      path: checks/policy-untouched.sh
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [policy-untouched]
+    timeout: 20m
