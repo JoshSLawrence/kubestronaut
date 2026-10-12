@@ -1,0 +1,85 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: hpa-autoscale
+  title: Autoscale a deployment on CPU
+  domain: workloads-scheduling
+  difficulty: medium
+  tags: [hpa, autoscaling, metrics-server]
+spec:
+  timeLimit: 10m
+  weight: 6
+  context: k8s-hpa
+  namespaces: [autoscale]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+    - registry.k8s.io/metrics-server/metrics-server:v0.9.0
+  prompt: prompt.md
+  hints:
+    - "`kubectl autoscale` creates a basic HorizontalPodAutoscaler. The
+      scale-down delay is part of the autoscaling/v2 `behavior` field."
+    - "`kubectl describe hpa` explains why the autoscaler cannot compute its
+      metric. CPU utilisation is a percentage of something."
+  setup:
+    - script: setup/metrics-server.sh
+      timeout: 6m
+    - manifest: setup/deploy.yaml
+    - wait:
+        ref: {kind: deployment, name: php-apache, namespace: autoscale}
+        for: condition=Available
+  checks:
+    - id: hpa-target
+      description: HorizontalPodAutoscaler php-apache scales deployment php-apache
+      type: jsonPath
+      ref: {kind: horizontalpodautoscaler, name: php-apache, namespace: autoscale}
+      path: '{.spec.scaleTargetRef.kind}/{.spec.scaleTargetRef.name}'
+      equals: Deployment/php-apache
+    - id: hpa-range
+      description: the autoscaler runs between 1 and 4 replicas
+      type: jsonPath
+      ref: {kind: horizontalpodautoscaler, name: php-apache, namespace: autoscale}
+      path: '{.spec.minReplicas}-{.spec.maxReplicas}'
+      equals: 1-4
+    - id: hpa-metric
+      description: the only metric is average CPU utilisation of 50%
+      weight: 2
+      type: jsonPath
+      ref: {kind: horizontalpodautoscaler, name: php-apache, namespace: autoscale}
+      path: '{range .spec.metrics[*]}{.type}/{.resource.name}/{.resource.target.type}/{.resource.target.averageUtilization} {end}'
+      matches: '^Resource/cpu/Utilization/50 $'
+    - id: hpa-window
+      description: the autoscaler waits 30 seconds before scaling down
+      weight: 2
+      type: jsonPath
+      ref: {kind: horizontalpodautoscaler, name: php-apache, namespace: autoscale}
+      path: '{.spec.behavior.scaleDown.stabilizationWindowSeconds}'
+      equals: 30
+    - id: deploy-requests
+      description: the containers of deployment php-apache declare what they need
+      weight: 2
+      type: jsonPath
+      ref: {kind: deployment, name: php-apache, namespace: autoscale}
+      path: '{.spec.template.spec.containers[*].resources.requests.cpu}'
+      nonEmpty: true
+    - id: deploy-ready
+      description: deployment php-apache is rolled out
+      type: ready
+      ref: {kind: deployment, name: php-apache, namespace: autoscale}
+      retry: {attempts: 10, interval: 3s}
+    - id: hpa-active
+      description: the autoscaler can compute its metric
+      weight: 3
+      type: jsonPath
+      ref: {kind: horizontalpodautoscaler, name: php-apache, namespace: autoscale}
+      path: '{.status.conditions[?(@.type=="ScalingActive")].status}'
+      equals: 'True'
+      retry: {attempts: 12, interval: 5s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [deploy-ready]
+    timeout: 15m
