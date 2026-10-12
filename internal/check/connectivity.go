@@ -76,6 +76,12 @@ func (c *connectivity) Run(ctx context.Context, env *Env) (Result, error) {
 	if len(pods) == 0 {
 		return Result{}, fmt.Errorf("source pod %s not found", describe(c.From))
 	}
+	// A pod that exists but is not running (Pending before a CNI exists, or
+	// crashed) cannot probe anything. That is a state the learner can be in,
+	// so it fails the check instead of reporting an infrastructure error.
+	if phase, _ := field(pods[0], "status", "phase").(string); phase != "Running" {
+		return fail("source %s is not running (phase %q)", describe(c.From), phase), nil
+	}
 	if c.Probe == "nc" && c.Expect == "denied" && net.ParseIP(c.host) == nil {
 		if err := c.checkResolves(ctx, env); err != nil {
 			return Result{}, err

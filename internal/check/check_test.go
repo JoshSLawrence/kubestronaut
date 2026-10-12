@@ -397,7 +397,8 @@ func TestPodExec(t *testing.T) {
 }
 
 func TestConnectivity(t *testing.T) {
-	k := &kube.Fake{Objects: []map[string]any{obj("Pod", "shop", "web", nil)}}
+	running := map[string]any{"status": map[string]any{"phase": "Running"}}
+	k := &kube.Fake{Objects: []map[string]any{obj("Pod", "shop", "web", running)}}
 	env := &Env{Kube: k}
 	var res execx.Result
 	var argv []string
@@ -508,7 +509,22 @@ func TestConnectivity(t *testing.T) {
 		t.Fatal("Get error")
 	}
 	k.GetErr = nil
-	k.Objects = []map[string]any{obj("Pod", "shop", "web", nil)}
+	k.Objects = []map[string]any{obj("Pod", "shop", "web", map[string]any{"status": map[string]any{"phase": "Pending"}})}
+	execCalled := false
+	k.ExecFunc = func(string, string, string, []string) (execx.Result, error) {
+		execCalled = true
+		return execx.Result{}, nil
+	}
+	for _, expect := range []string{"allowed", "denied"} {
+		r, err := run1("expect: " + expect)
+		if err != nil || r.Passed || !strings.Contains(r.Message, "source pod shop/web is not running") {
+			t.Fatalf("pending source pod with expect %s must fail cleanly: %+v %v", expect, r, err)
+		}
+	}
+	if execCalled {
+		t.Fatal("a pod that is not running must not be exec'd into")
+	}
+	k.Objects = []map[string]any{obj("Pod", "shop", "web", running)}
 	k.ExecFunc = func(string, string, string, []string) (execx.Result, error) {
 		return execx.Result{}, errors.New("boom")
 	}
