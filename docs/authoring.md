@@ -206,7 +206,12 @@ Every check has `id` (kebab-case, unique), `description`, and optional
 the learner before they have solved anything, so they must not name the fault
 or the answer.
 
-A `ref` is `{kind, name?, namespace?, selector?, fieldSelector?}`.
+A `ref` is `{kind, name?, namespace?, selector?, fieldSelector?}`. A kind the
+cluster does not know, such as a custom resource before its operator is
+installed, reads as zero objects instead of an error, so checks on it fail
+cleanly at baseline. Because a typo reads the same way, every kind used by a
+built-in scenario must be listed in `knownKinds` in
+`internal/validate/embedded_test.go`.
 
 | Type | Fields | Passes when |
 | ---- | ------ | ----------- |

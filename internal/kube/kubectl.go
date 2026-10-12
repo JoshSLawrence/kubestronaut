@@ -75,6 +75,12 @@ func (k *Kubectl) Get(ctx context.Context, r Ref) ([]map[string]any, error) {
 		if bytes.Contains(res.Stderr, []byte("(NotFound)")) {
 			return nil, nil
 		}
+		// A kind whose CRD is not installed has no objects. Scenarios where
+		// the learner installs an operator are graded before and after that,
+		// and a typo in a check's kind is caught by a catalog test instead.
+		if bytes.Contains(res.Stderr, []byte("the server doesn't have a resource type")) {
+			return nil, nil
+		}
 		return nil, cmdErr("get "+r.Kind, res)
 	}
 	var obj map[string]any

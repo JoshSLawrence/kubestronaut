@@ -43,7 +43,7 @@ func TestKubectlGetArgsAndErrors(t *testing.T) {
 		t.Fatalf("NotFound must be empty: %v %v", objs, err)
 	}
 	f.Respond([]string{"kubectl", "--kubeconfig", "/kc", "get", "widget"},
-		execx.Result{ExitCode: 1, Stderr: []byte("the server doesn't have a resource type")}, nil)
+		execx.Result{ExitCode: 1, Stderr: []byte("error: Unauthorized")}, nil)
 	if _, err := k.Get(context.Background(), Ref{Kind: "widget", AllNamespaces: true, FieldSelector: "a=b"}); err == nil {
 		t.Fatal("want error")
 	}
@@ -57,6 +57,16 @@ func TestKubectlGetArgsAndErrors(t *testing.T) {
 	f.Respond([]string{"kubectl", "--kubeconfig", "/kc", "get", "boom"}, execx.Result{}, errors.New("no binary"))
 	if _, err := k.Get(context.Background(), Ref{Kind: "boom"}); err == nil {
 		t.Fatal("want run error")
+	}
+}
+
+func TestKubectlGetUnknownKindIsEmpty(t *testing.T) {
+	k, f := newKubectl()
+	f.Respond([]string{"kubectl", "--kubeconfig", "/kc", "get", "certificate"},
+		execx.Result{ExitCode: 1, Stderr: []byte(`error: the server doesn't have a resource type "certificate"`)}, nil)
+	objs, err := k.Get(context.Background(), Ref{Kind: "certificate", Namespace: "shop", Name: "web-cert"})
+	if err != nil || len(objs) != 0 {
+		t.Fatalf("a kind without a CRD must read as zero objects: %v %v", objs, err)
 	}
 }
 
