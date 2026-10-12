@@ -82,12 +82,16 @@ tools, vim settings for YAML (two-space indent, no tabs), and the `k` alias
 with completion for kubectl. It also adds `etcdctl` and `etcdutl` in the etcd
 release that matches the cluster's etcd, Helm 3.22.0, the `bridge` CNI plugin
 (in `/opt/cni/bin`) and the `ipvsadm` packages as `.deb` files in `/opt/pkgs`.
-Every download except the `ipvsadm` packages is checked against a pinned
-sha256; apt verifies those by signature. The build usually takes
-under a minute and needs internet once; later starts reuse it. The hash
+The v1.36.4 image also holds an offline apt repository with kubeadm, kubelet
+and kubectl v1.37.1 in `/opt/kubernetes-apt` (about 33 MB on arm64, 38 MB on
+amd64), which the `kubeadm-upgrade` lab turns on. It is not an apt source until
+that lab enables it. Every download except the `ipvsadm` packages is checked
+against a pinned sha256; apt verifies those by signature. The build usually
+takes under a minute and needs internet once; later starts reuse it. The hash
 covers the Dockerfile (`internal/backend/kind/nodeimage/Dockerfile`), the base
-image and the etcd pin, so changing any of them rebuilds. `kubestronaut
-doctor` says whether it is built yet and lists old images you can remove.
+image and the etcd and apt pins, so changing any of them rebuilds.
+`kubestronaut doctor` says whether it is built yet and lists old images you
+can remove.
 
 `--node-image` uses your own image instead and skips the build; it will lack
 the editors unless you add them. `reset` keeps the same image.

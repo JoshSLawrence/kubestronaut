@@ -107,6 +107,87 @@ func TestNodeImageTagFollowsEtcdPin(t *testing.T) {
 	}
 }
 
+func TestAptReleasesAreWellFormed(t *testing.T) {
+	hex64 := regexp.MustCompile(`^[0-9a-f]{64}$`)
+	for v, r := range aptReleases {
+		if _, ok := nodeImages[v]; !ok {
+			t.Errorf("aptReleases has %s, which is not a supported version", v)
+		}
+		if !regexp.MustCompile(`^v1\.\d+$`).MatchString(r.Minor) ||
+			!regexp.MustCompile(`^1\.\d+\.\d+-\d+\.\d+$`).MatchString(r.Version) {
+			t.Errorf("%s: malformed minor %q or version %q", v, r.Minor, r.Version)
+		}
+		for arch, sums := range map[string]map[string]string{"amd64": r.SHA256AMD64, "arm64": r.SHA256ARM64} {
+			for _, pkg := range []string{"kubeadm", "kubelet", "kubectl"} {
+				if !hex64.MatchString(sums[pkg]) {
+					t.Errorf("%s %s: no sha256 for %s", v, arch, pkg)
+				}
+			}
+			if len(sums) != 3 {
+				t.Errorf("%s %s: want exactly kubeadm, kubelet and kubectl, got %v", v, arch, sums)
+			}
+		}
+	}
+	if _, ok := aptReleases["v1.36.4"]; !ok {
+		t.Error("v1.36.4 needs its apt release: the kubeadm-upgrade lab upgrades from it")
+	}
+}
+
+func TestBuildArgsAreDeterministicAndFollowTheAptPin(t *testing.T) {
+	a, err := buildArgs("v1.36.4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		if b, _ := buildArgs("v1.36.4"); strings.Join(a, "\n") != strings.Join(b, "\n") {
+			t.Fatalf("map order leaked into the build args:\n%v\n%v", a, b)
+		}
+	}
+	if joined := strings.Join(a, "\n"); !strings.Contains(joined, "K8S_APT_MINOR=v1.37") ||
+		!strings.Contains(joined, "kubeadm=") || !strings.Contains(joined, " kubelet=") {
+		t.Fatalf("apt arguments missing:\n%s", joined)
+	}
+	if _, err := buildArgs("v0"); err == nil {
+		t.Fatal("an unpinned version must fail")
+	}
+
+	before, _ := NodeImageTag("v1.36.4")
+	saved := aptReleases["v1.36.4"]
+	t.Cleanup(func() { aptReleases["v1.36.4"] = saved })
+	changed := saved
+	changed.SHA256ARM64 = map[string]string{}
+	for k, v := range saved.SHA256ARM64 {
+		changed.SHA256ARM64[k] = v
+	}
+	changed.SHA256ARM64["kubelet"] = strings.Repeat("0", 64)
+	aptReleases["v1.36.4"] = changed
+	if after, _ := NodeImageTag("v1.36.4"); after == before {
+		t.Fatal("changing an apt pin must rebuild the node image")
+	}
+}
+
+func TestNodeFilesForVersionWithAptRepo(t *testing.T) {
+	with := strings.Join(nodeFilesFor("v1.36.4"), " ")
+	for _, want := range []string{"/opt/kubernetes-apt/v1.37/Packages", "/opt/kubernetes-apt/kubernetes.list", "kind-cni-plugins.list", "bridge"} {
+		if !strings.Contains(with, want) {
+			t.Errorf("v1.36.4 must be smoke-tested for %s: %s", want, with)
+		}
+	}
+	if without := strings.Join(nodeFilesFor("v1.37.0"), " "); strings.Contains(without, "kubernetes-apt") {
+		t.Errorf("v1.37.0 has no apt repository: %s", without)
+	}
+}
+
+func TestDockerfileApt(t *testing.T) {
+	df := string(nodeDockerfile)
+	for _, want := range []string{"apt-utils", "ARG K8S_APT_MINOR", "apt-ftparchive packages", "apt-ftparchive release",
+		"[trusted=yes]", "Provides: kubernetes-cni", "force-confold"} {
+		if !strings.Contains(df, want) {
+			t.Errorf("Dockerfile lacks %q", want)
+		}
+	}
+}
+
 func TestPrepareSkipsExistingAndOverride(t *testing.T) {
 	k, f := newKind()
 	notified := false
@@ -151,8 +232,10 @@ func TestPrepareBuildsAndSmokeTests(t *testing.T) {
 	}
 	base, _ := ResolveImage("v1.37.0", "")
 	etcd := etcdReleases["v1.37.0"]
+	// v1.37.0 has no next minor, so the apt arguments are empty.
 	wantArgs := "build --build-arg BASE=" + base + " --build-arg ETCD_VERSION=" + etcd.Version +
 		" --build-arg ETCD_SHA256_AMD64=" + etcd.SHA256AMD64 + " --build-arg ETCD_SHA256_ARM64=" + etcd.SHA256ARM64 +
+		" --build-arg K8S_APT_MINOR= --build-arg K8S_APT_VERSION= --build-arg K8S_APT_SHA256_AMD64= --build-arg K8S_APT_SHA256_ARM64=" +
 		" -t " + tag + "-candidate -"
 	if got := strings.Join(build.Args, " "); got != wantArgs {
 		t.Fatalf("build args: %s", got)

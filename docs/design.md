@@ -835,7 +835,21 @@ the e2e validation proves it.
   `k` alias, plus checksum-verified etcdctl/etcdutl, Helm and the bridge CNI
   plugin, and the ipvsadm packages as .deb files). The etcd release is pinned
   per Kubernetes version in `images.go`. The hash covers the Dockerfile, base
-  image and etcd pin.
+  image, etcd pin and apt pin.
+  A version with an `aptReleases` entry (v1.36.4 today) also gets a local,
+  flat apt repository of the next minor's kubeadm, kubelet and kubectl in
+  `/opt/kubernetes-apt/<minor>/`, so the kubeadm upgrade lab runs the real
+  `apt-get install` flow offline. Each deb is pinned by sha256 taken from the
+  signed `Packages` index of pkgs.k8s.io (the fingerprint and date of the
+  signature check are in `images.go`); the repository itself is `trusted=yes`
+  because a key generated in the same build would prove nothing. The
+  `kubernetes-cni` dependency of kubelet is met by a small `kind-cni-plugins`
+  package that `Provides: kubernetes-cni`, because kind ships CNI v1.9.1
+  outside dpkg. A `force-confold` dpkg setting keeps kind's
+  `/etc/default/kubelet` when the kubelet package is installed. The source
+  file `/opt/kubernetes-apt/kubernetes.list` is not enabled by the image: the
+  lab copies it into `/etc/apt/sources.list.d/`, so the other labs never see
+  the new packages. The layer adds about 33 MB (arm64) or 38 MB (amd64).
   The build goes to a `-candidate` tag and is promoted only after a smoke
   test confirms the tools exist, so a broken image never sits under the real
   tag. Prepare has its own 15m budget so a slow first build cannot eat into

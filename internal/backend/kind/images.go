@@ -41,6 +41,47 @@ var etcdReleases = map[string]etcdRelease{
 		"e61a0954fe6a3003ee20f45e773e12e15c58323ea485deb8a55d065170cdafe8"},
 }
 
+// aptRelease is the next minor's kubeadm, kubelet and kubectl packages, served
+// from a local apt repository in the node image so a kubeadm upgrade lab runs
+// the real `apt-get install` flow without internet. The sha256s are those of
+// the repository's signed Packages index; its InRelease signature was checked
+// against key DE15B14486CD377B9E876E1A234654DA9A296436 (isv:kubernetes OBS
+// Project) on 2026-10-12. kubernetes-cni and cri-tools are not shipped: the
+// image provides a stand-in for the first (kind's own CNI plugins) and nothing
+// needs the second.
+type aptRelease struct {
+	Minor, Version string
+	// SHA256 maps a package to its deb's sha256, per architecture.
+	SHA256AMD64, SHA256ARM64 map[string]string
+}
+
+// aptReleases pins the next-minor packages for the Kubernetes versions that
+// have a published next minor and a lab that upgrades to it.
+var aptReleases = map[string]aptRelease{
+	"v1.36.4": {Minor: "v1.37", Version: "1.37.1-1.1",
+		SHA256AMD64: map[string]string{
+			"kubeadm": "b7f399d83fcb8c619927042b4dcd06ba68757fb74f9d2baabc358a0e22032f92",
+			"kubectl": "f2a1d6e1d2adf5c5c80d3518917a28b66a423698a553c4be4d181df8ddbdde94",
+			"kubelet": "a0692776f7f026ff17de0ede1b97f11c657300f586cc7939766c395f64c2e6d9",
+		},
+		SHA256ARM64: map[string]string{
+			"kubeadm": "25d485eade81e05d63000ed2848781fd0127218c6e0e9ca66bfa62d39d41886e",
+			"kubectl": "4e6ab8199a5ce617286630fe191abb3ed60ee05e347df919911703587caa870a",
+			"kubelet": "c4337289f95727dbe8dea323570acc85969dc06d5c9fd531c3bc711ff4d0ce88",
+		}},
+}
+
+// pairs renders a package to sha256 map as the sorted "pkg=sha256" list the
+// Dockerfile takes, so the build arguments are deterministic.
+func pairs(m map[string]string) string {
+	out := make([]string, 0, len(m))
+	for pkg, sum := range m {
+		out = append(out, pkg+"="+sum)
+	}
+	sort.Strings(out)
+	return strings.Join(out, " ")
+}
+
 // Versions lists the supported Kubernetes versions.
 func Versions() []string {
 	out := make([]string, 0, len(nodeImages))
