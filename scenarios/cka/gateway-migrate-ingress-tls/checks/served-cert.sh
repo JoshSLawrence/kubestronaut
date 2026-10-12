@@ -3,9 +3,10 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source "$KS_LIB"
 
-# The Ingress would answer the same requests, so it must be gone.
-if kubectl -n web get ingress web >/dev/null 2>&1; then
-  echo "Ingress web/web still exists and could be what answers" >&2
+# An Ingress would answer the same requests, so none may be left.
+left=$(kubectl get ingress -A -o name)
+if [ -n "$left" ]; then
+  echo "$left still exists and could be what answers" >&2
   exit 1
 fi
 

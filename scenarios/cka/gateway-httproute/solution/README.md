@@ -7,10 +7,11 @@ listener selects. Label the namespace instead of loosening the Gateway:
 kubectl label namespace shop shared-gateway-access=true
 ```
 
-The header match and the weighted split are two rules. Gateway API picks the
-most specific matching rule, so the rule with the header (a header match
-outranks a plain path match) takes the canary requests and everything else
-under `/api` falls to the weighted rule:
+The header match and the weighted split are two rules. Gateway API ranks
+matching rules by path specificity first; the number of header matches only
+breaks a tie. Both rules here match the same path, so the rule with the header
+match wins for canary requests and everything else under `/api` falls to the
+weighted rule:
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1

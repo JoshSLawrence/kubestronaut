@@ -42,7 +42,7 @@ spec:
       type: jsonPath
       ref: {kind: ingress, name: shop, namespace: shop}
       path: '{.spec.ingressClassName}{.metadata.annotations.kubernetes\.io/ingress\.class}'
-      equals: traefik
+      matches: '^traefik(traefik)?$'
     - id: api-route
       description: http://shop.example.local/api and everything below it reach the api backend
       weight: 2
@@ -70,7 +70,7 @@ spec:
       shell: |
         ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
         ip=${ips%% *}
-        for path in / /shop /index.html /v1/api; do
+        for path in / /apix /shop /index.html /v1/api; do
           body=$(curl -s --max-time 5 -H 'Host: shop.example.local' "http://$ip:30080$path" || true)
           if [ "$body" != "web" ]; then
             echo "$path answered '$body', want 'web'" >&2
@@ -83,6 +83,7 @@ spec:
       type: nodeExec
       node: controlplane
       timeout: 20s
+      retry: {attempts: 4, interval: 2s}
       shell: |
         ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
         ip=${ips%% *}

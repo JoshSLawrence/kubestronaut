@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One line per rule: "name=weight name=weight ...". A backend without a
-# weight has the API default of 1.
+# One line per rule: "header names|name=weight name=weight ...". A backend
+# without a weight has the API default of 1. Only a rule that does not match on
+# headers counts, since requests with the canary header must not be split.
 rules=$(kubectl -n shop get httproute api \
-  -o 'jsonpath={range .spec.rules[*]}{range .backendRefs[*]}{.name}={.weight} {end}{"\n"}{end}' 2>/dev/null || true)
-while read -r line; do
+  -o 'jsonpath={range .spec.rules[*]}{.matches[*].headers[*].name}|{range .backendRefs[*]}{.name}={.weight} {end}{"\n"}{end}' 2>/dev/null || true)
+while IFS='|' read -r headers line; do
+  [ -z "$headers" ] || continue
   w1=
   w2=
   for pair in $line; do
@@ -21,5 +23,5 @@ while read -r line; do
     exit 0
   fi
 done <<<"$rules"
-echo "no rule sends to api-v1 and api-v2 with weights in the ratio 9 to 1" >&2
+echo "no rule without a header match sends to api-v1 and api-v2 in the ratio 9 to 1" >&2
 exit 1

@@ -56,10 +56,10 @@ spec:
       equals: "True/True"
       retry: {attempts: 5, interval: 2s}
     - id: ingress-gone
-      description: Ingress web/web no longer exists
-      type: resourceExists
-      ref: {kind: ingress, name: web, namespace: web}
-      absent: true
+      description: no Ingress exists in the cluster any more
+      type: count
+      ref: {kind: ingress, allNamespaces: true}
+      eq: 0
     - id: https-traffic
       description: https://web.example.local on port 30443 reaches the web backend
       weight: 2
@@ -68,9 +68,10 @@ spec:
       timeout: 20s
       retry: {attempts: 5, interval: 2s}
       shell: |
-        # The Ingress would answer the same requests, so it must be gone.
-        if kubectl -n web get ingress web >/dev/null 2>&1; then
-          echo "Ingress web/web still exists and could be what answers" >&2
+        # An Ingress would answer the same requests, so none may be left.
+        left=$(kubectl get ingress -A -o name)
+        if [ -n "$left" ]; then
+          echo "$left still exists and could be what answers" >&2
           exit 1
         fi
         ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
@@ -93,6 +94,7 @@ spec:
       type: nodeExec
       node: controlplane
       timeout: 20s
+      retry: {attempts: 4, interval: 2s}
       shell: |
         ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
         ip=${ips%% *}

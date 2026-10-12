@@ -5,7 +5,10 @@ source "$KS_LIB"
 
 # The probe reads the Service address from its environment, which kubelet only
 # fills in for Services that existed when the pod started.
-kubectl -n infra exec probe -- printenv ECHO_SERVICE_HOST >/dev/null
+if ! kubectl -n infra exec probe -- printenv ECHO_SERVICE_HOST >/dev/null; then
+  ks_log "probe has no ECHO_SERVICE_HOST: the Service must exist before the pod starts; rerun with 'kubestronaut reset'"
+  exit 1
+fi
 
 ks_log "turning IPv4 forwarding off and pointing crictl at the wrong runtime"
 ks_node node01 sysctl -w net.ipv4.ip_forward=0

@@ -1,14 +1,4 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: net-test
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: secure
----
-apiVersion: v1
 kind: Pod
 metadata:
   name: server

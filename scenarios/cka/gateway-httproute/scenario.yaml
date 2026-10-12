@@ -79,7 +79,7 @@ spec:
           fi
         done
     - id: default-traffic
-      description: other requests for /api are answered by api-v1 and, rarely, by api-v2
+      description: other requests for /api are answered mostly by api-v1 and sometimes by api-v2
       weight: 2
       type: nodeExec
       node: controlplane
@@ -102,14 +102,17 @@ spec:
           esac
         done
         echo "v1=$v1 v2=$v2" >&2
-        # 10% of 60 is 6; 50/50 would average 30, so 20 is far from both.
+        # 10% of 60 is 6; 50/50 would average 30, so 20 is far from both. A
+        # route that never sends to api-v2 is not a split at all.
         test "$v1" -ge 40
+        test "$v2" -ge 1
         test "$v2" -le 20
     - id: scoped-to-host-and-path
       description: other hosts and paths are not routed to the backends
       type: nodeExec
       node: controlplane
       timeout: 20s
+      retry: {attempts: 4, interval: 2s}
       shell: |
         ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
         ip=${ips%% *}

@@ -16,6 +16,12 @@ written its configuration to `/etc/cni/net.d`; then CoreDNS and the test pods
 start. If the manifest is too large for client-side apply on your cluster,
 use `kubectl apply --server-side -f`.
 
+If you installed Flannel first, remove it before installing Calico, or the
+two plugins fight over `/etc/cni/net.d`: `kubectl delete -f
+/opt/cni/kube-flannel.yml`, delete the `10-flannel.conflist` file on every
+node (`kubestronaut ssh <node>`), and restart the pods that are already
+running so that they get Calico addresses.
+
 Check the policy took effect:
 
 ```bash

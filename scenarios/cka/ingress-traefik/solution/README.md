@@ -10,8 +10,9 @@ kubectl -n shop create secret tls shop-tls \
 
 Then create the Ingress. The class is not the default, so
 `ingressClassName: traefik` is required, or Traefik ignores the object. Both
-paths use `pathType: Prefix`: `/api` and `/api/v1/items` go to `api`, and
-everything else falls through to `/`, the `web` rule. `Exact` would only match
+paths use `pathType: Prefix`, which matches whole path segments (this Traefik
+runs with `strictPrefixMatching`): `/api` and `/api/v1/items` go to `api`,
+while `/apix` falls through to `/`, the `web` rule. `Exact` would only match
 `/api` itself. Naming the host keeps other
 hosts unrouted, which a rule without a host or a `defaultBackend` would not.
 
