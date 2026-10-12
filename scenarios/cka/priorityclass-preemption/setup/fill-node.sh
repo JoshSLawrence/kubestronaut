@@ -12,6 +12,8 @@ millis() {
   esac
 }
 
+# The scenario declares no workers, so the control plane is the only node and
+# kind leaves it schedulable. All pods below therefore compete for this node.
 node=$(ks_node_name controlplane)
 alloc=$(millis "$(kubectl get node "$node" -o 'jsonpath={.status.allocatable.cpu}')")
 used=0
@@ -21,11 +23,12 @@ for q in $(kubectl get pods -A --field-selector "spec.nodeName=$node" \
 done
 free=$((alloc - used))
 
-# Leave 300m free, so a 500m pod does not fit until one batch pod goes, and
+# Leave 100m free, so a 300m pod does not fit until one batch pod goes, and
 # make each batch pod big enough that removing one makes room.
-per=$(((free - 300) / 4))
+per=$(((free - 100) / 4))
 if [ "$per" -lt 200 ]; then
-  echo "the node has too little CPU to build this scenario (${free}m free)" >&2
+  need=$(((used + 900 + 999) / 1000))
+  echo "the node has too little CPU (${free}m free, 900m needed): give Docker at least $need CPUs and start again" >&2
   exit 1
 fi
 ks_log "allocatable ${alloc}m, requested ${used}m, filler pods ${per}m each"
@@ -79,7 +82,7 @@ spec:
           args: [pause]
           resources:
             requests:
-              cpu: 500m
+              cpu: 300m
 YAML
 # The pod must be visibly unschedulable, so the first grade is stable.
 for _ in $(seq 30); do

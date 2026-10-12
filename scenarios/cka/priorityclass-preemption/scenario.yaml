@@ -62,7 +62,7 @@ spec:
       type: jsonPath
       ref: {kind: deployment, name: api, namespace: prod}
       path: '{.spec.template.spec.containers[0].resources.requests.cpu}'
-      equals: 500m
+      equals: 300m
     - id: filler-unchanged
       description: the batch deployment is untouched
       type: jsonPath
