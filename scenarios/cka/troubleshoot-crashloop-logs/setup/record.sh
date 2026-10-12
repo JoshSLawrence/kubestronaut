@@ -4,8 +4,9 @@ set -euo pipefail
 source "$KS_LIB"
 
 # Wait for the first restart, so that the pod is crash looping when the learner
-# starts, and record the last line it logs. The line is printed as soon as an
-# instance starts, so plain logs hold it too when --previous has nothing.
+# starts, and record the last line it logs. An instance prints it just before
+# it exits, so while the next one runs only --previous has it, and between
+# restarts plain logs have it too.
 want='^FATAL [0-9a-f]\{8\}: DB_HOST not set$'
 line=""
 for _ in $(seq 90); do

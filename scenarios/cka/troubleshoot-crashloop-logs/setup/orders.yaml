@@ -31,7 +31,7 @@ spec:
           command:
             - sh
             - -c
-            - 'echo starting; if [ -z "$DB_HOST" ]; then echo "FATAL $INSTANCE_ID: DB_HOST not set"; sleep 15; exit 1; fi; touch /tmp/ready; echo "connected to $DB_HOST"; sleep 1d'
+            - 'echo starting; if [ -z "$DB_HOST" ]; then sleep 15; echo "FATAL $INSTANCE_ID: DB_HOST not set"; exit 1; fi; touch /tmp/ready; echo "connected to $DB_HOST"; sleep 1d'
           readinessProbe:
             exec:
               command: [test, -f, /tmp/ready]
