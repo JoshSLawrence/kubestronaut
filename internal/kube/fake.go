@@ -189,3 +189,10 @@ var errFake = errors.New("fake failure")
 
 // ErrFake is a reusable error for tests.
 func ErrFake() error { return errFake }
+
+// Add stores an object; safe to call while another goroutine uses the Fake.
+func (f *Fake) Add(o map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Objects = append(f.Objects, o)
+}
