@@ -11,7 +11,7 @@ The first pack is CKA. CKAD and CKS packs plug in without engine changes; see
 ## Requirements
 
 - macOS or Linux (the session lock uses `flock`, so Windows is not supported)
-- Docker with at least 6 GiB of memory (a scenario uses one or two kind nodes)
+- Docker with at least 6 GiB of memory (a scenario uses one to three kind nodes)
 - [mise](https://mise.jdx.dev/) to install the pinned toolchain
 
 `mise install` provides Go, kind and kubectl at the versions in `mise.toml`.
@@ -96,11 +96,28 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 
 ## Scenarios
 
-| Id | Domain | Nodes |
-| -- | ------ | ----- |
-| `cka/rbac-dev-access` | cluster-architecture | 1 |
-| `cka/networkpolicy-isolate` | services-networking | 1 |
-| `cka/troubleshoot-kubelet` | troubleshooting | 2 |
+| Id                                   | Domain               | Nodes | Time |
+| ------------------------------------ | -------------------- | ----- | ---- |
+| `cka/configmap-secret-env`           | workloads-scheduling | 1     | 10m  |
+| `cka/deployment-rollout-rollback`    | workloads-scheduling | 1     | 8m   |
+| `cka/networkpolicy-isolate`          | services-networking  | 1     | 10m  |
+| `cka/networkpolicy-least-permissive` | services-networking  | 1     | 8m   |
+| `cka/node-maintenance-drain`         | cluster-architecture | 3     | 10m  |
+| `cka/priorityclass-preemption`       | workloads-scheduling | 1     | 10m  |
+| `cka/quota-limitrange`               | workloads-scheduling | 1     | 10m  |
+| `cka/rbac-dev-access`                | cluster-architecture | 1     | 8m   |
+| `cka/rbac-user-csr`                  | cluster-architecture | 1     | 12m  |
+| `cka/scheduling-taints-affinity`     | workloads-scheduling | 3     | 10m  |
+| `cka/sidecar-init-probes`            | workloads-scheduling | 1     | 12m  |
+| `cka/storage-pv-pvc`                 | storage              | 1     | 8m   |
+| `cka/storage-pvc-pending`            | storage              | 1     | 10m  |
+| `cka/storageclass-dynamic`           | storage              | 1     | 10m  |
+| `cka/troubleshoot-control-plane`     | troubleshooting      | 1     | 12m  |
+| `cka/troubleshoot-coredns`           | troubleshooting      | 1     | 12m  |
+| `cka/troubleshoot-crashloop-logs`    | troubleshooting      | 1     | 8m   |
+| `cka/troubleshoot-kube-proxy`        | troubleshooting      | 2     | 12m  |
+| `cka/troubleshoot-kubelet`           | troubleshooting      | 2     | 10m  |
+| `cka/troubleshoot-service-endpoints` | troubleshooting      | 1     | 10m  |
 
 ## Development
 
