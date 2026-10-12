@@ -1112,8 +1112,8 @@ depends = ["lint", "test", "validate"]
     `kubestronaut list --exam cka --json`.
   - Per-scenario job: `timeout-minutes: 55`, which is more than the
     go test timeout (`KS_E2E_TIMEOUT: 45m`), itself more than the scenario's
-    `validation.timeout` (at most 30m) plus about 10m of tool install and
-    kind image pulls.
+    `validation.timeout` plus about 10m of tool install and kind image
+    pulls. The longest is 20m today; a unit test caps it at 30m.
   - Step: `mise run e2e` with `KS_E2E_SCENARIOS=${{ matrix.id }}`. kind
     comes from mise; Docker is preinstalled on the runner.
 - **Timeout rule:** each job timeout must be greater than the tool timeout
