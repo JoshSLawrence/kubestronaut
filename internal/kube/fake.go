@@ -35,8 +35,17 @@ func CanIKey(as, verb, resource, sub, ns string) string {
 	return strings.Join([]string{as, verb, resource, sub, ns}, "|")
 }
 
+var shortNames = map[string]string{
+	"po": "pod", "no": "node", "deploy": "deployment", "sts": "statefulset",
+	"ds": "daemonset", "pvc": "persistentvolumeclaim", "pv": "persistentvolume",
+	"svc": "service", "ns": "namespace", "netpol": "networkpolicy",
+}
+
 func norm(kind string) string {
 	k := strings.ToLower(kind)
+	if long, ok := shortNames[k]; ok {
+		k = long
+	}
 	switch {
 	case strings.HasSuffix(k, "ies"):
 		return strings.TrimSuffix(k, "ies") + "y"
