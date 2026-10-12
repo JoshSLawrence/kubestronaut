@@ -305,13 +305,13 @@ type ClusterSpec struct {
     Name              string // ks-<slug>, <= 40 chars
     KubernetesVersion string // "v1.36.4" -> pinned image by digest
     NodeImage         string // optional raw override
-    ControlPlanes     int    // 1 only for now
+    ControlPlanes     int    // 1 or 3; 0 means 1
     Workers           int
     Kubeconfig        string // path kind writes the admin config to
 }
 type Node struct {
     Name  string   // backend/k8s node name, e.g. ks-x-worker
-    Alias string   // controlplane, node01, node02 ...
+    Alias string   // controlplane, controlplane02, node01 ...
     Role  NodeRole
 }
 type Backend interface {
@@ -330,8 +330,27 @@ type Backend interface {
 }
 ```
 
-Aliases are assigned in order: the control-plane node is `controlplane`; the
-workers, sorted by name, are `node01`, `node02`, and so on.
+Aliases are assigned in order: the first control-plane node is `controlplane`
+(the one `kubeadm init` ran on, so every single-control-plane scenario is
+unchanged); in an HA cluster the others, sorted by name, are `controlplane02`
+and `controlplane03`, mirroring kind's `-control-plane2` and
+`-control-plane3`. The workers, sorted by name, are `node01`, `node02`, and so
+on. `controlplane01` is rejected so a node has one name.
+
+A scenario asks for an HA cluster with `cluster.controlPlanes: 3` (1 or 3 only:
+etcd needs an odd member count, and more nodes do not fit typical Docker
+memory). kind then adds an Envoy load balancer container named
+`<cluster>-external-load-balancer`. It is not a Kubernetes node (no kubelet,
+no containerd), so `Nodes()` skips it and it has no alias; `kind delete`
+removes it with the cluster. `Prepare` pulls its image (`LoadBalancerImage`,
+kind v0.33.0's `envoyproxy/envoy:v1.36.2`; keep it in step with `mise.toml`) so
+the pull does not count against the create timeout. An HA cluster uses about
+1.9 GiB across its five containers (measured: 3 control planes at 0.5 to 0.7
+GiB each, a worker at 0.15 GiB, the load balancer at 30 MiB) and is created in
+about 70 seconds, with a create budget of 9 minutes (5, plus 2 for each
+control plane after the first). Exam mode, when it arrives, must refuse to
+place a `controlPlanes > 1` scenario on an exam cluster: `ExamCluster` has no
+such field.
 
 ```go
 // internal/kube
@@ -884,7 +903,8 @@ the e2e validation proves it.
 - **Timeouts:**
   - node image prepare: 15m (only a first build per version is slow; e2e
     runs it before the scenario's own budget starts)
-  - kind create: 5m (includes `--wait 3m`)
+  - kind create: 5m (includes `--wait 3m`), plus 2m for each control plane
+    after the first
   - image load: 5m
   - each setup script: 3m by default
   - each wait step: 2m
@@ -952,21 +972,42 @@ the e2e validation proves it.
      - `vault/golden` exists and `post-snapshot` is absent
      - controlplane Ready
    - Feasible: the node is privileged, so the `/proc` copy works.
-5. **kubeadm-upgrade** (exclusive, experimental). Cluster on v1.36.4.
-   - Setup: on the host, `docker create kindest/node:v1.37.0@...` and
-     `docker cp` its kubeadm, kubelet and kubectl into
-     `/opt/upgrade/v1.37.0/` on the node.
-   - Task: `kubeadm upgrade plan/apply v1.37.0`, drain, replace kubelet,
-     restart, uncordon.
-   - Checks: `status.nodeInfo.kubeletVersion == v1.37.0`; the kube-apiserver
-     pod image ends with `:v1.37.0`; node Ready and schedulable.
-   - **Partly feasible.** kind nodes are Debian and do have `apt-get`, but
-     not the Kubernetes package repository, so the exam's `apt-mark unhold`
-     steps are replaced by copying binaries. The upgrade
-     pulls control-plane images (needs internet, or preload with `images`).
-     kubeadm preflight may object to kind's settings (may need
-     `--ignore-preflight-errors`). It also pulls an extra ~1 GB node image.
-     It ships hidden until a spike passes `validate --e2e`.
+5. **kubeadm-upgrade** (exclusive). Cluster on v1.36.4, two
+   nodes.
+   - Setup: the node image holds a local apt repository of the v1.37 package
+     line (see "Node image build"); setup enables it on both nodes and
+     preloads the v1.37.1 control-plane images with `images`, so nothing needs
+     internet.
+   - Task: upgrade both nodes to v1.37.1 with the real flow: `apt-get
+     install kubeadm`, `kubeadm upgrade plan/apply`, drain, kubelet and
+     kubectl packages, restart, uncordon, then `kubeadm upgrade node` on the
+     worker.
+   - Checks: dpkg versions, the `kubeadm-config` ConfigMap, static pod
+     manifests and add-on images (only `apply` changes them), kubelet
+     versions, schedulable and Ready nodes, and that the `apps/web` pods were
+     recreated by a drain.
+   - Spike (kind v0.33.0): `apply` needs no preflight ignore and takes about
+     160 s, and the whole run about 8 minutes.
+     etcd 3.6.8 to 3.7.0 works. The kubelet upgrade restarts the control-plane
+     static pods, so the solution waits for the API server to answer steadily
+     before the next drain.
+   - Passed `validate --e2e` three times in a row on arm64 before it lost its
+     `experimental` flag.
+5b. **kubeadm-join-node.** Two nodes. Setup drains and resets `node01`,
+    deletes its Node object and kind's never-expiring join token. The task is
+    a 2 hour bootstrap token, the complete join command written to a file, and
+    the join. The file is graded against the live cluster (token secret,
+    lifetime, CA hash, endpoint). `kubeadm join` needs no preflight flags in
+    kind.
+5c. **ha-replace-control-plane** (exclusive). Three control
+    planes behind a load balancer, plus a worker (`cluster.controlPlanes: 3`).
+    Setup resets and wipes `controlplane03` but leaves its etcd member. The
+    task is `etcdctl member remove`, `kubectl delete node`, `kubeadm init
+    phase upload-certs`, and a `kubeadm join --control-plane` with the
+    certificate key. Joining without removing the member first does not work:
+    the new etcd panics against the old member id, and the join hangs. It
+    passed `validate --e2e` three times in a row on arm64 before it lost its
+    `experimental` flag.
 6. **scheduling-taints-affinity.**
    - Setup: node02 tainted `dedicated=gpu:NoSchedule` and labelled
      `accelerator=gpu`.
@@ -1127,7 +1168,7 @@ depends = ["lint", "test", "validate"]
   - Per-scenario job: `timeout-minutes: 55`, which is more than the
     go test timeout (`KS_E2E_TIMEOUT: 45m`), itself more than the scenario's
     `validation.timeout` plus about 10m of tool install and kind image
-    pulls. The longest is 20m today; a unit test caps it at 30m.
+    pulls. The longest is 25m today; a unit test caps it at 30m.
   - Step: `mise run e2e` with `KS_E2E_SCENARIOS=${{ matrix.id }}`. kind
     comes from mise; Docker is preinstalled on the runner.
 - **Timeout rule:** each job timeout must be greater than the tool timeout

@@ -11,7 +11,9 @@ The first pack is CKA. CKAD and CKS packs plug in without engine changes; see
 ## Requirements
 
 - macOS or Linux (the session lock uses `flock`, so Windows is not supported)
-- Docker with at least 6 GiB of memory (a scenario uses one to three kind nodes)
+- Docker with at least 6 GiB of memory (a scenario uses one to four kind
+  nodes; the HA scenario runs three control planes, a worker and a load
+  balancer in about 2 GiB)
 - [mise](https://mise.jdx.dev/) to install the pinned toolchain
 
 `mise install` provides Go, kind and kubectl at the versions in `mise.toml`.
@@ -113,11 +115,13 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/etcd-backup-restore`            | cluster-architecture | 1     | 15m  |
 | `cka/gateway-httproute`              | services-networking  | 2     | 12m  |
 | `cka/gateway-migrate-ingress-tls`    | services-networking  | 2     | 15m  |
+| `cka/ha-replace-control-plane`       | cluster-architecture | 4     | 20m  |
 | `cka/helm-install-rollback`          | cluster-architecture | 1     | 12m  |
 | `cka/hpa-autoscale`                  | workloads-scheduling | 2     | 10m  |
 | `cka/ingress-traefik`                | services-networking  | 2     | 12m  |
 | `cka/kubeadm-certs-renew`            | cluster-architecture | 1     | 10m  |
 | `cka/kubeadm-join-node`              | cluster-architecture | 2     | 12m  |
+| `cka/kubeadm-upgrade`                | cluster-architecture | 2     | 20m  |
 | `cka/kustomize-overlay`              | cluster-architecture | 2     | 12m  |
 | `cka/monitor-resource-usage`         | troubleshooting      | 2     | 8m   |
 | `cka/networkpolicy-isolate`          | services-networking  | 1     | 10m  |
