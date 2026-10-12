@@ -54,6 +54,15 @@ func TestEmbeddedKindsAreKnown(t *testing.T) {
 			if json.Unmarshal(c.Raw, &peek) == nil && peek.Ref.Kind != "" {
 				kinds[peek.Ref.Kind] = true
 			}
+			// connectivity checks name their source pod in from.
+			var conn struct {
+				From struct {
+					Kind string `json:"kind"`
+				} `json:"from"`
+			}
+			if json.Unmarshal(c.Raw, &conn) == nil && conn.From.Kind != "" {
+				kinds[conn.From.Kind] = true
+			}
 		}
 		for k := range kinds {
 			if !knownKinds[strings.ToLower(k)] {

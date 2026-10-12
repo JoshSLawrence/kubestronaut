@@ -82,7 +82,8 @@ tools, vim settings for YAML (two-space indent, no tabs), and the `k` alias
 with completion for kubectl. It also adds `etcdctl` and `etcdutl` in the etcd
 release that matches the cluster's etcd, Helm 3.22.0, the `bridge` CNI plugin
 (in `/opt/cni/bin`) and the `ipvsadm` packages as `.deb` files in `/opt/pkgs`.
-Every download is checked against a pinned sha256. The build usually takes
+Every download except the `ipvsadm` packages is checked against a pinned
+sha256; apt verifies those by signature. The build usually takes
 under a minute and needs internet once; later starts reuse it. The hash
 covers the Dockerfile (`internal/backend/kind/nodeimage/Dockerfile`), the base
 image and the etcd pin, so changing any of them rebuilds. `kubestronaut
