@@ -188,6 +188,19 @@ but cannot reverse a random value, and the answers survive the removal of
 setup files. Keys are ASCII letters, digits, `.`, `_` and `-`; anything else
 fails so a key cannot escape the directory.
 
+#### Vendored third-party files
+
+Manifests and charts that a scenario needs offline (metrics-server,
+cert-manager, a Helm chart) are copied into the scenario's `files/` directory
+from upstream releases. `scenarios/cka/vendor.lock` pins each one: a name, a
+version, the sha256, the download url and every destination. To add or bump
+one, edit the lock and run `mise run vendor`, which downloads, verifies and
+writes the copies (`mise run vendor --check` only verifies the downloads). A
+Go test (`scenarios/vendor_test.go`) fails when a copy no longer matches the
+lock, and the pre-commit hooks leave `files/` alone so nothing reformats it.
+Pin an exact version and check the checksum against the project's own
+release notes or checksum file, not just the download.
+
 ### Tools on the nodes
 
 Nodes run kubestronaut's node image (see the README), so prompts and

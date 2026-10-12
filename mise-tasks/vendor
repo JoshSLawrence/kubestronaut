@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#MISE description="Download the pinned third-party files listed in scenarios/cka/vendor.lock into the scenarios"
+#USAGE flag "--check" help="Only verify the downloads against the lock; write nothing"
+set -euo pipefail
+
+log() { printf '[vendor] %s\n' "$*" >&2; }
+die() {
+  log "error: $*"
+  exit 1
+}
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+root=${MISE_PROJECT_ROOT:?run via 'mise run vendor'}
+lock="$root/scenarios/cka/vendor.lock"
+[ -f "$lock" ] || die "missing $lock"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+while read -r name version want url dests; do
+  case "$name" in '' | '#'*) continue ;; esac
+  [ -n "$dests" ] || die "$name: no destination in the lock"
+  log "downloading $name $version"
+  file="$tmp/$name"
+  curl -fsSL --retry 3 -o "$file" "$url" ||
+    die "$name: download of $url failed: check the url and your network, then retry"
+  got=$(sha256_of "$file")
+  if [ "$got" != "$want" ]; then
+    die "$name $version: sha256 is $got, the lock says $want: if the upstream file was rebuilt, review it before updating the lock"
+  fi
+  if [ "${usage_check:-false}" = "true" ]; then
+    continue
+  fi
+  for dest in $dests; do
+    log "writing $dest"
+    mkdir -p "$(dirname "$root/$dest")"
+    cp "$file" "$root/$dest"
+  done
+done <"$lock"
+log "done"
