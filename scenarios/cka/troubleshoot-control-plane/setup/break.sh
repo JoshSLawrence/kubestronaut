@@ -17,14 +17,18 @@ ks_node controlplane sed -i \
 ks_node controlplane grep -q 'controller-manager.config' \
   "$manifests/kube-controller-manager.yaml"
 
-# Wait until both faults show, so the first grade is stable. A slow machine
-# gets plenty of time: the faults stay in place until the learner fixes them.
+# Wait until both faults show: no scheduler pod, and a controller manager that
+# has crashed and been restarted at least once, so the first grade is stable.
+# A slow machine gets plenty of time: the faults stay in place until the
+# learner fixes them.
 for _ in $(seq 90); do
   sched=$(kubectl -n kube-system get pods -l component=kube-scheduler \
     -o 'jsonpath={.items[*].metadata.name}')
-  cm=$(kubectl -n kube-system get pods -l component=kube-controller-manager \
-    -o 'jsonpath={.items[*].status.conditions[?(@.type=="Ready")].status}')
-  if [ -z "$sched" ] && [ "$cm" != "True" ]; then
+  restarts=$(kubectl -n kube-system get pods -l component=kube-controller-manager \
+    -o 'jsonpath={.items[0].status.containerStatuses[0].restartCount}')
+  ready=$(kubectl -n kube-system get pods -l component=kube-controller-manager \
+    -o 'jsonpath={.items[0].status.conditions[?(@.type=="Ready")].status}')
+  if [ -z "$sched" ] && [ "${restarts:-0}" -ge 1 ] && [ "$ready" != "True" ]; then
     exit 0
   fi
   sleep 2

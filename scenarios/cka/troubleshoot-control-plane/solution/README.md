@@ -25,6 +25,10 @@ sed -i 's#controller-manager.config#controller-manager.conf#' \
   /etc/kubernetes/manifests/kube-controller-manager.yaml
 ```
 
+Copying `controller-manager.conf` to `controller-manager.config` does not
+help: the pod mounts only `controller-manager.conf` from the host, so the flag
+still points at a file the container cannot see. Fix the flag.
+
 The kubelet notices the manifest changes and restarts both pods, after which
 the deployment gets its ReplicaSet, pods and nodes. Fixing the manifests, not
 the running containers, is what keeps the fix after a kubelet restart.
