@@ -1,0 +1,51 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: troubleshoot-kubelet
+  title: Fix a broken kubelet
+  domain: troubleshooting
+  difficulty: medium
+  tags: [kubelet, systemd, node]
+spec:
+  timeLimit: 10m
+  weight: 7
+  context: k8s-kubelet
+  namespaces: [ops]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - Read `journalctl -u kubelet` on node01 for the first error.
+    - Compare file paths in /var/lib/kubelet/config.yaml with
+      /etc/kubernetes/pki. Then check the unit is enabled, not just started.
+  setup:
+    - script: setup/break-kubelet.sh
+    - manifest: setup/pinned.yaml
+  checks:
+    - id: kubelet-enabled
+      description: kubelet is enabled on node01 (survives reboot)
+      weight: 2
+      type: nodeExec
+      node: node01
+      command: [systemctl, is-enabled, kubelet]
+    - id: node01-ready
+      description: node01 is Ready
+      weight: 3
+      type: ready
+      ref: {kind: node, name: '{{node "node01"}}'}
+      retry: {attempts: 10, interval: 3s}
+    - id: pinned-ready
+      description: deployment ops/pinned is available
+      weight: 2
+      type: ready
+      ref: {kind: deployment, name: pinned, namespace: ops}
+      retry: {attempts: 10, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: []
+    timeout: 15m

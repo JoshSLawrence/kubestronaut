@@ -26,8 +26,14 @@ func Duration(d time.Duration) string {
 	d = d.Round(time.Second)
 	switch {
 	case d >= time.Hour:
+		if int(d.Minutes())%60 == 0 {
+			return fmt.Sprintf("%dh", int(d.Hours()))
+		}
 		return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
 	case d >= time.Minute:
+		if int(d.Seconds())%60 == 0 {
+			return fmt.Sprintf("%dm", int(d.Minutes()))
+		}
 		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 	}
 	return fmt.Sprintf("%ds", int(d.Seconds()))

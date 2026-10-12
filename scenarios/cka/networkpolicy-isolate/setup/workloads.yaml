@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: other
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api
+  namespace: shop
+  labels:
+    app: api
+spec:
+  containers:
+    - name: api
+      image: registry.k8s.io/e2e-test-images/agnhost:2.61
+      args: [netexec, --http-port=8080]
+      ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: shop
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web
+  namespace: shop
+  labels:
+    app: web
+spec:
+  containers:
+    - name: web
+      image: registry.k8s.io/e2e-test-images/agnhost:2.61
+      args: [pause]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug
+  namespace: shop
+  labels:
+    app: debug
+spec:
+  containers:
+    - name: debug
+      image: registry.k8s.io/e2e-test-images/agnhost:2.61
+      args: [pause]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: intruder
+  namespace: other
+  labels:
+    app: intruder
+spec:
+  containers:
+    - name: intruder
+      image: registry.k8s.io/e2e-test-images/agnhost:2.61
+      args: [pause]

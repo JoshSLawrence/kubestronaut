@@ -1,0 +1,70 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: networkpolicy-isolate
+  title: Restrict access to an API with a NetworkPolicy
+  domain: services-networking
+  difficulty: medium
+  tags: [networkpolicy]
+spec:
+  timeLimit: 10m
+  weight: 6
+  context: k8s-netpol
+  namespaces: [shop, other]
+  exclusive: false
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - A policy that selects a pod denies all ingress not explicitly allowed.
+    - Combine podSelector and namespaceSelector carefully; `other` must stay
+      blocked.
+  setup:
+    - manifest: setup/workloads.yaml
+    - wait:
+        ref: {kind: pod, namespace: shop, selector: app}
+        for: condition=Ready
+    - wait:
+        ref: {kind: pod, name: intruder, namespace: other}
+        for: condition=Ready
+  checks:
+    - id: policy-exists
+      description: NetworkPolicy shop/api-allow-web exists
+      type: resourceExists
+      ref: {kind: networkpolicy, name: api-allow-web, namespace: shop}
+    - id: policy-selects-api
+      description: the policy selects the api pods
+      type: jsonPath
+      ref: {kind: networkpolicy, name: api-allow-web, namespace: shop}
+      path: '{.spec.podSelector.matchLabels.app}'
+      equals: api
+    - id: web-allowed
+      description: shop/web can reach api on 8080
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: web, namespace: shop}
+      to: api.shop.svc.cluster.local:8080
+      expect: allowed
+      retry: {attempts: 5, interval: 2s}
+    - id: debug-denied
+      description: shop/debug cannot reach api
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: debug, namespace: shop}
+      to: api.shop.svc.cluster.local:8080
+      expect: denied
+      retry: {attempts: 5, interval: 2s}
+    - id: other-denied
+      description: pods in namespace other cannot reach api
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: intruder, namespace: other}
+      to: api.shop.svc.cluster.local:8080
+      expect: denied
+      retry: {attempts: 5, interval: 2s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [web-allowed]
+    timeout: 10m

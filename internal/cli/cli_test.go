@@ -88,7 +88,7 @@ func TestListAndShow(t *testing.T) {
 	}
 	_, out, _ = e.exec("", "list", "--json", "--exam", "cka", "--domain", "troubleshooting")
 	var entries []listEntry
-	if err := json.Unmarshal([]byte(out), &entries); err != nil || len(entries) != 1 || entries[0].Nodes != 1 || entries[0].TimeLimit != "10m00s" {
+	if err := json.Unmarshal([]byte(out), &entries); err != nil || len(entries) != 1 || entries[0].Nodes != 1 || entries[0].TimeLimit != "10m" {
 		t.Fatalf("json: %v %s", err, out)
 	}
 	_, out, _ = e.exec("", "list", "--json", "--exam", "none")
@@ -143,7 +143,7 @@ func TestSessionFlow(t *testing.T) {
 		t.Fatalf("env: %q", out)
 	}
 	_, out, _ = e.exec("", "status")
-	for _, want := range []string{"cka/demo (Demo scenario)", "k8s-demo", "controlplane", "of 10m00s suggested"} {
+	for _, want := range []string{"cka/demo (Demo scenario)", "k8s-demo", "controlplane", "of 10m suggested"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status missing %q:\n%s", want, out)
 		}

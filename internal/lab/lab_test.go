@@ -127,7 +127,7 @@ func TestStartHappyPath(t *testing.T) {
 		}
 	}
 	out := f.out.String()
-	for _, want := range []string{"Context: k8s-demo", "Suggested time: 10m00s", "Weight: 7%", "Fix ks-cka-demo-worker.", "export KUBECONFIG=" + f.lab.Store.KubeconfigPath()} {
+	for _, want := range []string{"Context: k8s-demo", "Suggested time: 10m", "Weight: 7%", "Fix ks-cka-demo-worker.", "export KUBECONFIG=" + f.lab.Store.KubeconfigPath()} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}

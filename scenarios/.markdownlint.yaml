@@ -1,0 +1,3 @@
+# Prompts are shown to learners verbatim, so they start with prose rather than
+# a heading.
+MD041: false
