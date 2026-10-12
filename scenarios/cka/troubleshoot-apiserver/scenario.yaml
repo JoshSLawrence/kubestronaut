@@ -40,7 +40,7 @@ spec:
       shell: |
         m=/etc/kubernetes/manifests/kube-apiserver.yaml
         # Each flag is read from the manifest, whatever other arguments surround it.
-        flag() { sed -n "s/^[[:space:]]*- --$1=\(.*\)$/\1/{p;q;}" "$m"; }
+        flag() { sed -n "/^[[:space:]]*- --$1=/{s///;p;q;}" "$m"; }
         etcd=$(flag etcd-servers)
         case "$etcd" in
           https://*:2379 | https://*:2379,*) ;;
