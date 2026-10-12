@@ -1,0 +1,72 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: storage-pvc-pending
+  title: Fix a claim that will not bind
+  domain: storage
+  difficulty: medium
+  tags: [pv, pvc, troubleshooting]
+spec:
+  timeLimit: 10m
+  weight: 5
+  context: k8s-pvc
+  namespaces: [reports]
+  exclusive: false
+  images:
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - "`kubectl describe pvc` shows why a claim is not bound."
+    - A claim binds only to a volume with the same storage class, a compatible
+      access mode and at least the requested size. Most of a claim's spec
+      cannot be edited.
+  setup:
+    - script: setup/data.sh
+    - manifest: setup/reports.yaml
+    - script: setup/record-uid.sh
+  checks:
+    - id: pvc-bound
+      description: PersistentVolumeClaim reports/archive is bound
+      type: ready
+      ref: {kind: persistentvolumeclaim, name: archive, namespace: reports}
+      retry: {attempts: 10, interval: 3s}
+    - id: pvc-volume
+      description: the claim is bound to archive-pv
+      weight: 2
+      type: jsonPath
+      ref: {kind: persistentvolumeclaim, name: archive, namespace: reports}
+      path: '{.spec.volumeName}'
+      equals: archive-pv
+      retry: {attempts: 10, interval: 3s}
+    - id: pv-spec
+      description: archive-pv keeps its size, access mode, class, reclaim policy and path
+      weight: 2
+      type: jsonPath
+      ref: {kind: persistentvolume, name: archive-pv}
+      path: '{.spec.capacity.storage}/{.spec.accessModes[*]}/{.spec.storageClassName}/{.spec.persistentVolumeReclaimPolicy}/{.spec.hostPath.path}'
+      matches: '^2Gi/ReadWriteOnce/archive/Retain//srv/archive/?$'
+    - id: pv-original
+      description: archive-pv is the original volume
+      type: script
+      path: checks/volume-original.sh
+    - id: pod-uses-claim
+      description: pod reports/archiver mounts the claim at /archive
+      type: script
+      path: checks/claim-mounted.sh
+    - id: pod-ready
+      description: pod reports/archiver is running
+      type: ready
+      ref: {kind: pod, name: archiver, namespace: reports}
+      retry: {attempts: 10, interval: 3s}
+    - id: data-kept
+      description: the pod sees the data that was on the volume
+      weight: 2
+      type: script
+      path: checks/data-kept.sh
+      retry: {attempts: 10, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [pv-spec, pv-original, pod-uses-claim]
+    timeout: 10m
