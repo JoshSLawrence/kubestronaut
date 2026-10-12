@@ -26,10 +26,12 @@ spec:
       containers:
         - name: orders
           image: busybox:1.38.0
+          # Both lines go to stdout: separate streams can land in the log in
+          # either order, and the last line must be well defined.
           command:
             - sh
             - -c
-            - 'echo starting; if [ -z "$DB_HOST" ]; then echo "FATAL $INSTANCE_ID: DB_HOST not set" >&2; sleep 15; exit 1; fi; touch /tmp/ready; echo "connected to $DB_HOST"; sleep 1d'
+            - 'echo starting; if [ -z "$DB_HOST" ]; then echo "FATAL $INSTANCE_ID: DB_HOST not set"; sleep 15; exit 1; fi; touch /tmp/ready; echo "connected to $DB_HOST"; sleep 1d'
           readinessProbe:
             exec:
               command: [test, -f, /tmp/ready]
