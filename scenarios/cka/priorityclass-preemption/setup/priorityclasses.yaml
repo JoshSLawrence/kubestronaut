@@ -1,0 +1,33 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: tier-gold
+  labels: {group: tiers}
+value: 750000
+description: Reserved for the most important workloads.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: tier-silver
+  labels: {group: tiers}
+value: 400000
+description: Important workloads.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: tier-bronze
+  labels: {group: tiers}
+value: 1000
+description: Batch workloads that can be evicted.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: batch
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
