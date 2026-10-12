@@ -63,9 +63,10 @@ ks_copy_to() {
   # macOS tar adds AppleDouble "._" entries for extended attributes unless
   # both of these are set, and "kubectl apply -f dir/" chokes on them. On the
   # node, take ownership and permissions from the node's defaults instead of
-  # the host's uid and mode.
+  # the host's uid and mode; --no-overwrite-dir stops GNU tar from applying the
+  # "./" entry's mode (often 0700) to the destination directory.
   COPYFILE_DISABLE=1 tar --no-xattrs -C "$src" -cf - . |
-    ks_node "$alias" tar --no-same-owner --no-same-permissions -xf - -C "$dest"
+    ks_node "$alias" tar --no-same-owner --no-same-permissions --no-overwrite-dir -xf - -C "$dest"
 }
 
 # _ks_sha256: print the sha256 of stdin. macOS has no sha256sum.

@@ -294,7 +294,9 @@ func TestKsCopyTo(t *testing.T) {
 	stream := filepath.Join(base, "stream.tar")
 	// The stand-in node records the archive it is sent and unpacks it with the
 	// same flags the real node gets.
-	script := `ks_node() { shift; if [ "$1" = tar ]; then tee "$KS_TEST_STREAM" | "$@"; else "$@"; fi; }
+	// --no-overwrite-dir is GNU tar only (the node's tar); the host's bsdtar
+	// does not know it and does not need it to keep the directory mode.
+	script := `ks_node() { shift; if [ "$1" = tar ]; then local a=(); for x in "$@"; do [ "$x" = --no-overwrite-dir ] || a+=("$x"); done; tee "$KS_TEST_STREAM" | "${a[@]}"; else "$@"; fi; }
 ks_copy_to node01 '` + src + `' '` + dest + `'
 cat '` + dest + `/sub/a.txt'`
 	out, errs, err := bashLibEnv(t, t.TempDir(), script, "KS_TEST_STREAM="+stream)
