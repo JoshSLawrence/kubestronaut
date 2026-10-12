@@ -29,7 +29,7 @@ var knownKinds = map[string]bool{
 	"apiservice": true, "certificate": true, "certificatesigningrequest": true,
 	"clusterissuer": true, "clusterrole": true, "clusterrolebinding": true,
 	"configmap": true, "customresourcedefinition": true, "daemonset": true,
-	"deployment": true, "endpointslice": true, "horizontalpodautoscaler": true, "ingress": true,
+	"deployment": true, "endpointslice": true, "gatewayclass": true, "gateway": true, "horizontalpodautoscaler": true, "httproute": true, "ingress": true,
 	"limitrange": true, "networkpolicy": true, "node": true, "persistentvolume": true,
 	"persistentvolumeclaim": true, "pod": true, "poddisruptionbudget": true,
 	"priorityclass": true, "resourcequota": true, "role": true, "rolebinding": true,
