@@ -1,12 +1,15 @@
 package setup
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -243,5 +246,132 @@ func TestWaitStepHonoursWaitTimeout(t *testing.T) {
 	start := time.Now()
 	if err := r.Run(context.Background(), scen(st)); err == nil || time.Since(start) > 5*time.Second {
 		t.Fatalf("wait.timeout ignored: err=%v after %s", err, time.Since(start))
+	}
+}
+
+// bashLib runs script with the helper library sourced. ks_node is replaced by
+// a stand-in that runs the command locally, so node helpers work offline.
+func bashLib(t *testing.T, scenarioDir, script string) (string, string, error) {
+	t.Helper()
+	return bashLibEnv(t, scenarioDir, script)
+}
+
+func bashLibEnv(t *testing.T, scenarioDir, script string, extra ...string) (string, string, error) {
+	t.Helper()
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+	lib, err := WriteLib(filepath.Join(t.TempDir(), "sess"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", "-c", `source "$KS_LIB"; ks_node() { shift; "$@"; }; eval "$KS_TEST_SCRIPT"`)
+	cmd.Env = append(os.Environ(), "KS_LIB="+lib, "KS_SCENARIO_DIR="+scenarioDir, "KS_TEST_SCRIPT="+script)
+	cmd.Env = append(cmd.Env, extra...)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	err = cmd.Run()
+	return out.String(), errb.String(), err
+}
+
+func TestKsCopyTo(t *testing.T) {
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(src, "sub", "a.txt")
+	if err := os.WriteFile(file, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "darwin" {
+		// An extended attribute makes macOS tar emit a "._a.txt" entry.
+		if _, errs, err := bashLib(t, t.TempDir(), "xattr -w com.example.test x '"+file+"'"); err != nil {
+			t.Skipf("cannot set an extended attribute: %v %s", err, errs)
+		}
+	}
+	base := t.TempDir()
+	dest := filepath.Join(base, "new", "dir")
+	stream := filepath.Join(base, "stream.tar")
+	// The stand-in node records the archive it is sent and unpacks it with the
+	// same flags the real node gets.
+	// --no-overwrite-dir is GNU tar only (the node's tar); the host's bsdtar
+	// does not know it and does not need it to keep the directory mode.
+	script := `ks_node() { shift; if [ "$1" = tar ]; then local a=(); for x in "$@"; do [ "$x" = --no-overwrite-dir ] || a+=("$x"); done; tee "$KS_TEST_STREAM" | "${a[@]}"; else "$@"; fi; }
+ks_copy_to node01 '` + src + `' '` + dest + `'
+cat '` + dest + `/sub/a.txt'`
+	out, errs, err := bashLibEnv(t, t.TempDir(), script, "KS_TEST_STREAM="+stream)
+	if err != nil || out != "hello" {
+		t.Fatalf("copy: out=%q err=%v stderr=%s", out, err, errs)
+	}
+	f, err := os.Open(filepath.Clean(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	var names []string
+	for tr := tar.NewReader(f); ; {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, h.Name)
+	}
+	listing := strings.Join(names, "\n")
+	if strings.Contains(listing, "._") {
+		t.Fatalf("the archive carries AppleDouble entries:\n%s", listing)
+	}
+	if !strings.Contains(listing, "sub/a.txt") {
+		t.Fatalf("the archive lacks the file:\n%s", listing)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The source directory is 0700; the destination must not inherit that.
+	if info.Mode().Perm()&0o055 != 0o055 {
+		t.Fatalf("destination mode %v, want world readable", info.Mode().Perm())
+	}
+	if _, errs, err = bashLib(t, t.TempDir(), "ks_copy_to node01 /does/not/exist /x"); err == nil || !strings.Contains(errs, "not a directory") {
+		t.Fatalf("missing source: err=%v stderr=%q", err, errs)
+	}
+}
+
+func TestKsAnswers(t *testing.T) {
+	sd := t.TempDir()
+	if _, errs, err := bashLib(t, sd, `ks_answer_put token s3cret`); err != nil {
+		t.Fatalf("put: %v %s", err, errs)
+	}
+	info, err := os.Stat(filepath.Join(sd, ".answers", "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("answer mode %v, want 0600", info.Mode().Perm())
+	}
+	raw, _ := os.ReadFile(filepath.Clean(filepath.Join(sd, ".answers", "token")))
+	if strings.Contains(string(raw), "s3cret") || len(strings.TrimSpace(string(raw))) != 64 {
+		t.Fatalf("answer must be a sha256, got %q", raw)
+	}
+	for script, wantOK := range map[string]bool{
+		`ks_answer_check token s3cret`:                                 true,
+		`ks_answer_check token s3cret2`:                                false,
+		`ks_answer_check token ''`:                                     false,
+		`ks_answer_check nokey s3cret`:                                 false,
+		`ks_answer_check ../token s3cret`:                              false,
+		`ks_answer_put '../escape' x`:                                  false,
+		`ks_answer_put '.hidden' x`:                                    false,
+		`ks_answer_put '' x`:                                           false,
+		`ks_answer_put multi $'a\nb' && ks_answer_check multi $'a\nb'`: true,
+	} {
+		_, errs, err := bashLib(t, sd, script)
+		if (err == nil) != wantOK {
+			t.Errorf("%s: err=%v stderr=%q, want ok=%v", script, err, errs, wantOK)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(sd), "escape")); err == nil {
+		t.Fatal("a key must not escape the answers directory")
 	}
 }

@@ -136,9 +136,46 @@ materialized scenario directory, with:
 
 The library provides `ks_node <alias> <cmd...>` (run on a node through
 `kubestronaut ssh`, so scripts never call docker), `ks_node_name <alias>`,
-`ks_wait_node <alias> Ready|NotReady <secs>` and `ks_log`. Scripts start with
-`#!/usr/bin/env bash` and `set -euo pipefail`, are `chmod +x`, and must pass
-shellcheck and `shfmt -i 2 -ci`.
+`ks_wait_node <alias> Ready|NotReady <secs>`, `ks_log`, and the helpers below.
+
+Scripts start with `#!/usr/bin/env bash` and `set -euo pipefail`, are
+`chmod +x`, and must pass shellcheck and `shfmt -i 2 -ci`. They run on the
+learner's machine, which may be macOS with bash 3.2 and BSD tools, so avoid
+bash 4 features (`mapfile`, `readarray`, `declare -A`, `${var,,}`, `|&`) and
+GNU-only `sed` or `date` syntax. A test rejects the bash 4 constructs.
+
+#### Files on nodes
+
+`ks_copy_to <alias> <local-dir> <node-dir>` copies the contents of a local
+directory (for example one the script writes to a temporary directory) onto a
+node and creates the destination. It streams a tar archive through `ks_node`,
+so the node needs nothing but `mkdir` and `tar`. The archive carries no
+macOS metadata files, and the files on the node belong to the node's user
+with default permissions, not the host's uid and mode.
+
+#### Facts only setup knows
+
+Setup often creates a value the checks must compare against later: a random
+token, an object uid, a file hash. Store it with `ks_answer_put <key> <value>`
+in setup and verify it in a `script` check with `ks_answer_check <key>
+<value>`, which exits 0 on a match. It prints nothing on a mismatch and logs
+a message when no answer was recorded. In setup:
+
+```bash
+ks_answer_put token "$token"
+```
+
+In the check:
+
+```bash
+ks_answer_check token "$(ks_node controlplane cat /root/token.txt)"
+```
+
+Only the sha256 of the value is written, to `$KS_SCENARIO_DIR/.answers/<key>`
+with mode 0600 in a directory with mode 0700. The learner can read the hash
+but cannot reverse a random value, and the answers survive the removal of
+setup files. Keys are ASCII letters, digits, `.`, `_` and `-`; anything else
+fails so a key cannot escape the directory.
 
 ### Tools on the nodes
 
@@ -182,7 +219,14 @@ Command expectations are `exitCode` (default 0), `stdoutContains` and
 
 `connectivity` execs `/agnhost connect` in the source pod (`probe: nc` uses
 `nc -z`), so source pods must run agnhost or busybox images. A `denied` check
-passes only on a timeout or refusal, never on a DNS failure.
+passes only on a timeout or refusal, never on a DNS failure. A source pod
+that exists but has no running container (Pending, not scheduled, or every
+container waiting or terminated) fails the check with "not running" rather
+than reporting an error, so scenarios can probe from a pod that only starts
+once the learner has fixed something. A crash-looping pod has the phase
+Running, so it counts as not running only while its container is down. A
+source pod that does not exist at all is still an error: that is a scenario
+bug.
 
 YAML pitfalls: `true`, `yes` and `no` become booleans, so write
 `command: ['true']` and `stdoutContains: 'yes'`.

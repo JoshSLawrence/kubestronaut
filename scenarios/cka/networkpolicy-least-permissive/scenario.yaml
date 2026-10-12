@@ -1,0 +1,96 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: networkpolicy-least-permissive
+  title: Choose the least permissive NetworkPolicy
+  domain: services-networking
+  difficulty: medium
+  tags: [networkpolicy]
+spec:
+  timeLimit: 8m
+  weight: 5
+  context: k8s-netpol2
+  namespaces: [frontend, backend, other]
+  exclusive: false
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - Read each file before you apply it. A namespaceSelector alone matches
+      every pod in the namespaces it selects.
+    - Within one rule, a namespaceSelector and a podSelector in the same
+      `from` entry are combined with AND.
+  setup:
+    - manifest: setup/workloads.yaml
+    - wait:
+        ref: {kind: deployment, name: backend, namespace: backend}
+        for: condition=Available
+    - wait:
+        ref: {kind: pod, name: web, namespace: frontend}
+        for: condition=Ready
+    - wait:
+        ref: {kind: pod, name: debug, namespace: frontend}
+        for: condition=Ready
+    - wait:
+        ref: {kind: pod, name: web, namespace: other}
+        for: condition=Ready
+    - script: setup/policies.sh
+  checks:
+    - id: frontend-allowed
+      description: frontend/web can reach backend on 8080
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: web, namespace: frontend}
+      to: backend.backend.svc.cluster.local:8080
+      expect: allowed
+      retry: {attempts: 5, interval: 3s}
+    - id: frontend-other-port-denied
+      description: frontend/web cannot reach backend on 9090
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: web, namespace: frontend}
+      to: backend.backend.svc.cluster.local:9090
+      expect: denied
+      retry: {attempts: 3, interval: 3s}
+    - id: frontend-debug-denied
+      description: frontend/debug cannot reach backend on 8080
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: debug, namespace: frontend}
+      to: backend.backend.svc.cluster.local:8080
+      expect: denied
+      retry: {attempts: 3, interval: 3s}
+    - id: other-denied
+      description: other/web, labelled like the real client, cannot reach backend on 8080
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: web, namespace: other}
+      to: backend.backend.svc.cluster.local:8080
+      expect: denied
+      retry: {attempts: 3, interval: 3s}
+    - id: policy-count
+      description: namespace backend has exactly two NetworkPolicies
+      type: count
+      ref: {kind: networkpolicy, namespace: backend}
+      eq: 2
+    - id: chosen-policy
+      description: NetworkPolicy backend/allow-frontend is applied as provided
+      weight: 2
+      type: jsonPath
+      ref: {kind: networkpolicy, name: allow-frontend, namespace: backend}
+      path: '{.spec.podSelector.matchLabels.app}/{.spec.ingress[*].from[*].namespaceSelector.matchLabels}/{.spec.ingress[*].from[*].podSelector.matchLabels}/{.spec.ingress[*].ports[*].port}'
+      equals: 'backend/{"kubernetes.io/metadata.name":"frontend"}/{"app":"frontend"}/8080'
+    - id: deny-all-kept
+      description: NetworkPolicy backend/deny-all is still applied
+      type: resourceExists
+      ref: {kind: networkpolicy, name: deny-all, namespace: backend}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution:
+      - frontend-other-port-denied
+      - frontend-debug-denied
+      - other-denied
+      - deny-all-kept
+    timeout: 10m

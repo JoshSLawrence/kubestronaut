@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-config
+  namespace: orders
+data:
+  database-host: orders-db.orders.svc.cluster.local
+  database-port: "5432"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+  namespace: orders
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders
+  template:
+    metadata:
+      labels:
+        app: orders
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: orders
+          image: busybox:1.38.0
+          # Both lines go to stdout: separate streams can land in the log in
+          # either order, and the last line must be well defined.
+          command:
+            - sh
+            - -c
+            - 'echo starting; if [ -z "$DB_HOST" ]; then sleep 15; echo "FATAL $INSTANCE_ID: DB_HOST not set"; exit 1; fi; touch /tmp/ready; echo "connected to $DB_HOST"; sleep 1d'
+          readinessProbe:
+            exec:
+              command: [test, -f, /tmp/ready]
+            periodSeconds: 2
+          env:
+            - name: INSTANCE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: orders-runtime
+                  key: instance-id

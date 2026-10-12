@@ -1,0 +1,92 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: troubleshoot-kube-proxy
+  title: Restore Service routing
+  domain: troubleshooting
+  difficulty: medium
+  tags: [kube-proxy, services, networking]
+spec:
+  timeLimit: 12m
+  weight: 7
+  context: k8s-proxy
+  namespaces: [shop]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - Something on every node turns a Service address into a pod address.
+      Look at the pods that run it.
+    - "`kubectl describe pod` and `kubectl logs` show why a container keeps
+      failing."
+  setup:
+    - manifest: setup/shop.yaml
+    - wait:
+        ref: {kind: deployment, name: api, namespace: shop}
+        for: condition=Available
+    - manifest: setup/client.yaml
+    - wait:
+        ref: {kind: pod, name: client, namespace: shop}
+        for: condition=Ready
+    - script: setup/break-proxy.sh
+      timeout: 5m
+  checks:
+    - id: mode-unchanged
+      description: the kube-proxy mode in its ConfigMap is unchanged
+      type: script
+      path: checks/mode-unchanged.sh
+    - id: kube-proxy-config
+      description: kube-proxy runs with its original configuration
+      weight: 2
+      type: jsonPath
+      ref: {kind: daemonset, name: kube-proxy, namespace: kube-system}
+      path: '{.spec.template.spec.containers[0].command[*]}'
+      contains: --config=/var/lib/kube-proxy/config.conf
+    - id: kube-proxy-ready
+      description: kube-proxy is running and stable on every node
+      weight: 2
+      type: script
+      path: checks/proxy-stable.sh
+      retry: {attempts: 6, interval: 3s}
+    - id: service-by-name
+      description: a pod reaches Service shop/api by name
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: client, namespace: shop}
+      to: api.shop.svc.cluster.local:8080
+      probe: nc
+      expect: allowed
+      # A name that cannot be resolved takes about 20s to fail.
+      timeout: 40s
+      retry: {attempts: 2, interval: 3s}
+    - id: service-by-ip
+      description: a pod reaches Service shop/api by its cluster IP
+      weight: 2
+      type: podExec
+      ref: {kind: pod, name: client, namespace: shop}
+      command: [sh, -c, 'nc -z -w 3 "$API_SERVICE_HOST" 8080']
+      retry: {attempts: 5, interval: 3s}
+    - id: rules-controlplane
+      description: controlplane has rules for the cluster's Services
+      type: nodeExec
+      node: controlplane
+      shell: iptables-save -t nat | grep -c KUBE-SVC
+      stdoutMatches: '^[1-9][0-9]*\s*$'
+      retry: {attempts: 5, interval: 3s}
+    - id: rules-node01
+      description: node01 has rules for the cluster's Services
+      type: nodeExec
+      node: node01
+      shell: iptables-save -t nat | grep -c KUBE-SVC
+      stdoutMatches: '^[1-9][0-9]*\s*$'
+      retry: {attempts: 5, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [mode-unchanged]
+    timeout: 15m

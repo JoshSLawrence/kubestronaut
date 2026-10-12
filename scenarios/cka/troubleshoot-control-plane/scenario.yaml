@@ -1,0 +1,74 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: troubleshoot-control-plane
+  title: Fix the scheduler and the controller manager
+  domain: troubleshooting
+  difficulty: medium
+  tags: [control-plane, scheduler, controller-manager, static-pods]
+spec:
+  timeLimit: 12m
+  weight: 7
+  context: k8s-cp
+  namespaces: [app]
+  exclusive: true
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - Control plane components run as static pods. The kubelet reads their
+      manifests from the directory set by staticPodPath in its config.
+    - "`crictl ps -a` and `crictl logs` on controlplane show why a container
+      stopped."
+  setup:
+    - script: setup/break.sh
+      timeout: 5m
+    - manifest: setup/web.yaml
+  checks:
+    - id: scheduler-ready
+      description: the kube-scheduler pod is ready
+      weight: 2
+      type: ready
+      ref: {kind: pod, namespace: kube-system, selector: component=kube-scheduler}
+      retry: {attempts: 20, interval: 3s}
+    - id: controller-manager-ready
+      description: the kube-controller-manager pod is ready
+      weight: 2
+      type: ready
+      ref: {kind: pod, namespace: kube-system, selector: component=kube-controller-manager}
+      retry: {attempts: 20, interval: 3s}
+    - id: scheduler-definition
+      description: the scheduler's static pod definition is intact
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        dir=$(awk '/^staticPodPath:/ {print $2}' /var/lib/kubelet/config.yaml)
+        test -s "$dir/kube-scheduler.yaml"
+    - id: controller-manager-definition
+      description: the controller manager's static pod definition is intact
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        dir=$(awk '/^staticPodPath:/ {print $2}' /var/lib/kubelet/config.yaml)
+        grep -Eq -- '^[[:space:]]*- --kubeconfig=/etc/kubernetes/controller-manager\.conf[[:space:]]*$' "$dir/kube-controller-manager.yaml"
+    - id: web-ready
+      description: deployment app/web has both replicas available
+      weight: 3
+      type: ready
+      ref: {kind: deployment, name: web, namespace: app}
+      minReady: 2
+      retry: {attempts: 20, interval: 3s}
+    - id: web-unpinned
+      description: deployment app/web does not name a node
+      type: jsonPath
+      ref: {kind: deployment, name: web, namespace: app}
+      path: '{.spec.template.spec.nodeName}'
+      empty: true
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [web-unpinned]
+    timeout: 15m

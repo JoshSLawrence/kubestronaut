@@ -1,0 +1,97 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: sidecar-init-probes
+  title: Add a log-shipping sidecar, a probe and a security context
+  domain: workloads-scheduling
+  difficulty: medium
+  tags: [sidecar, probes, securitycontext, logging]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-sidecar
+  namespaces: [logging]
+  exclusive: false
+  images:
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - A native sidecar is an init container with restartPolicy Always.
+    - With a read-only root filesystem a container can only write to its
+      volumes.
+  setup:
+    - manifest: setup/legacy-app.yaml
+    - wait:
+        ref: {kind: deployment, name: legacy-app, namespace: logging}
+        for: condition=Available
+    - script: setup/record.sh
+  checks:
+    - id: sidecar-native
+      description: log-shipper is declared as a native sidecar
+      weight: 2
+      type: jsonPath
+      ref: {kind: deployment, name: legacy-app, namespace: logging}
+      path: '{.spec.template.spec.initContainers[?(@.name=="log-shipper")].restartPolicy}'
+      equals: Always
+    - id: sidecar-image
+      description: log-shipper uses image busybox:1.38.0
+      type: jsonPath
+      ref: {kind: deployment, name: legacy-app, namespace: logging}
+      path: '{.spec.template.spec.initContainers[?(@.name=="log-shipper")].image}'
+      equals: busybox:1.38.0
+    - id: shared-volume
+      description: both containers share the emptyDir volume logs at /var/log
+      weight: 2
+      type: script
+      path: checks/shared-volume.sh
+    - id: logs-streamed
+      description: the sidecar shows the application log
+      weight: 2
+      type: script
+      path: checks/logs-streamed.sh
+      retry: {attempts: 10, interval: 3s}
+    - id: readiness-probe
+      description: the app container has a readiness probe that depends on the log file
+      weight: 2
+      type: script
+      path: checks/probe-behaviour.sh
+      retry: {attempts: 10, interval: 3s}
+    - id: app-security-context
+      description: the app container sets the required container-level security settings
+      weight: 2
+      type: jsonPath
+      ref: {kind: deployment, name: legacy-app, namespace: logging}
+      path: '{.spec.template.spec.containers[?(@.name=="app")].securityContext.runAsNonRoot}/{.spec.template.spec.containers[?(@.name=="app")].securityContext.runAsUser}/{.spec.template.spec.containers[?(@.name=="app")].securityContext.readOnlyRootFilesystem}/{.spec.template.spec.containers[?(@.name=="app")].securityContext.allowPrivilegeEscalation}'
+      equals: true/10001/true/false
+    - id: sidecar-security-context
+      description: the log-shipper container sets the required container-level security settings
+      weight: 2
+      type: jsonPath
+      ref: {kind: deployment, name: legacy-app, namespace: logging}
+      path: '{.spec.template.spec.initContainers[?(@.name=="log-shipper")].securityContext.runAsNonRoot}/{.spec.template.spec.initContainers[?(@.name=="log-shipper")].securityContext.runAsUser}/{.spec.template.spec.initContainers[?(@.name=="log-shipper")].securityContext.readOnlyRootFilesystem}/{.spec.template.spec.initContainers[?(@.name=="log-shipper")].securityContext.allowPrivilegeEscalation}'
+      equals: true/10001/true/false
+    - id: runtime-security
+      description: both running containers enforce the security settings
+      weight: 2
+      type: script
+      path: checks/runtime-security.sh
+      retry: {attempts: 10, interval: 3s}
+    - id: pods-ready
+      description: every legacy-app pod is running with the sidecar ready
+      weight: 2
+      type: jsonPath
+      ref: {kind: pod, namespace: logging, selector: app=legacy-app}
+      path: '{.status.initContainerStatuses[?(@.name=="log-shipper")].ready}/{.status.containerStatuses[?(@.name=="app")].ready}'
+      equals: true/true
+      match: all
+      retry: {attempts: 10, interval: 3s}
+    - id: app-unchanged
+      description: the app container keeps its image and command
+      type: script
+      path: checks/app-unchanged.sh
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [app-unchanged]
+    timeout: 10m

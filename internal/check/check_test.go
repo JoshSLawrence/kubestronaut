@@ -397,7 +397,10 @@ func TestPodExec(t *testing.T) {
 }
 
 func TestConnectivity(t *testing.T) {
-	k := &kube.Fake{Objects: []map[string]any{obj("Pod", "shop", "web", nil)}}
+	running := map[string]any{"status": map[string]any{"phase": "Running", "containerStatuses": []any{
+		map[string]any{"state": map[string]any{"running": map[string]any{}}},
+	}}}
+	k := &kube.Fake{Objects: []map[string]any{obj("Pod", "shop", "web", running)}}
 	env := &Env{Kube: k}
 	var res execx.Result
 	var argv []string
@@ -508,7 +511,68 @@ func TestConnectivity(t *testing.T) {
 		t.Fatal("Get error")
 	}
 	k.GetErr = nil
-	k.Objects = []map[string]any{obj("Pod", "shop", "web", nil)}
+	k.Objects = []map[string]any{obj("Pod", "shop", "web", map[string]any{"status": map[string]any{"phase": "Pending"}})}
+	execCalled := false
+	k.ExecFunc = func(string, string, string, []string) (execx.Result, error) {
+		execCalled = true
+		return execx.Result{}, nil
+	}
+	for _, expect := range []string{"allowed", "denied"} {
+		r, err := run1("expect: " + expect)
+		if err != nil || r.Passed || !strings.Contains(r.Message, "source pod shop/web is not running") {
+			t.Fatalf("pending source pod with expect %s must fail cleanly: %+v %v", expect, r, err)
+		}
+	}
+	if execCalled {
+		t.Fatal("a pod that is not running must not be exec'd into")
+	}
+	// Phase Running but every container waiting, as in CrashLoopBackOff.
+	crashed := map[string]any{"status": map[string]any{"phase": "Running", "containerStatuses": []any{
+		map[string]any{"state": map[string]any{"waiting": map[string]any{"reason": "CrashLoopBackOff"}}},
+	}}}
+	k.Objects = []map[string]any{obj("Pod", "shop", "web", crashed)}
+	for _, expect := range []string{"allowed", "denied"} {
+		r, err := run1("expect: " + expect)
+		if err != nil || r.Passed || !strings.Contains(r.Message, "source pod shop/web is not running") {
+			t.Fatalf("crash-looping source pod with expect %s must fail cleanly: %+v %v", expect, r, err)
+		}
+	}
+	if execCalled {
+		t.Fatal("a pod without a running container must not be exec'd into")
+	}
+	// The default container decides, not whether some container runs: here a
+	// sidecar runs while the first (default) container waits.
+	twoContainers := func(annotation string) map[string]any {
+		extra := map[string]any{
+			"spec": map[string]any{"containers": []any{
+				map[string]any{"name": "app"}, map[string]any{"name": "sidecar"},
+			}},
+			"status": map[string]any{"phase": "Running", "containerStatuses": []any{
+				map[string]any{"name": "app", "state": map[string]any{"waiting": map[string]any{"reason": "CrashLoopBackOff"}}},
+				map[string]any{"name": "sidecar", "state": map[string]any{"running": map[string]any{}}},
+			}},
+		}
+		o := obj("Pod", "shop", "web", extra)
+		if annotation != "" {
+			o["metadata"].(map[string]any)["annotations"] = map[string]any{"kubectl.kubernetes.io/default-container": annotation}
+		}
+		return o
+	}
+	execCalled = false
+	k.Objects = []map[string]any{twoContainers("")}
+	if r, err := run1("expect: allowed"); err != nil || r.Passed || execCalled {
+		t.Fatalf("waiting first container must fail without exec: %+v %v exec=%v", r, err, execCalled)
+	}
+	k.Objects = []map[string]any{twoContainers("sidecar")}
+	if r, err := run1("expect: allowed"); err != nil || !r.Passed || !execCalled {
+		t.Fatalf("running default-container annotation must probe: %+v %v exec=%v", r, err, execCalled)
+	}
+	k.Objects = []map[string]any{twoContainers("app")}
+	execCalled = false
+	if r, _ := run1("expect: allowed"); r.Passed || execCalled {
+		t.Fatal("annotated default container is waiting")
+	}
+	k.Objects = []map[string]any{obj("Pod", "shop", "web", running)}
 	k.ExecFunc = func(string, string, string, []string) (execx.Result, error) {
 		return execx.Result{}, errors.New("boom")
 	}
