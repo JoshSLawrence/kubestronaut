@@ -100,6 +100,17 @@ rendered with Go `text/template` before use:
 Scripts are not templated; they get environment variables instead. In YAML,
 quote template calls: `name: '{{node "node01"}}'`.
 
+#### Verbatim files
+
+Everything under the scenario's `files/` directory is copied as it is, even
+`.yaml` and `.json` files. Use it for content that has template syntax of its
+own, such as a Helm chart's `templates/*.yaml`, or that is vendored and must
+keep its checksum. Setup scripts push it to a node with `ks_copy_to`, for
+example `ks_copy_to controlplane files/charts /opt/charts`. The directory is
+deleted from the learner's scenario directory once setup has run. Go's
+`embed` skips files whose names start with `.` or `_`, so a chart cannot use
+`_helpers.tpl`.
+
 ### Setup steps
 
 Steps run in order and each has exactly one key.
@@ -177,15 +188,31 @@ but cannot reverse a random value, and the answers survive the removal of
 setup files. Keys are ASCII letters, digits, `.`, `_` and `-`; anything else
 fails so a key cannot escape the directory.
 
+#### Vendored third-party files
+
+Manifests and charts that a scenario needs offline (metrics-server,
+cert-manager, a Helm chart) are copied into the scenario's `files/` directory
+from upstream releases. `scenarios/cka/vendor.lock` pins each one: a name, a
+version, the sha256, the download url and every destination. To add or bump
+one, edit the lock and run `mise run vendor`, which downloads, verifies and
+writes the copies (`mise run vendor --check` only verifies the downloads). A
+Go test (`scenarios/vendor_test.go`) fails when a copy no longer matches the
+lock, and the pre-commit hooks leave `files/` alone so nothing reformats it.
+Pin an exact version and check the checksum against the project's own
+release notes or checksum file, not just the download.
+
 ### Tools on the nodes
 
 Nodes run kubestronaut's node image (see the README), so prompts and
-solutions can rely on `vim`, `nano`, `less`, `etcdctl`, `nslookup`/`dig`,
-`ps` and `netstat` on every node, plus the kind image's `curl`, `jq` and
-`crictl`. If a scenario needs another tool, add it to
-`internal/backend/kind/nodeimage/Dockerfile` (and to `nodeTools` if its
-absence should fail the build) rather than installing it during setup: setup
-must not need internet, and every scenario should see the same node.
+solutions can rely on `vim`, `nano`, `less`, `etcdctl` and `etcdutl` (the
+etcd release that matches the cluster), `helm`, `nslookup`/`dig`, `ps` and
+`netstat` on every node, plus the kind image's `curl`, `jq` and `crictl`. The
+`bridge` CNI plugin is in `/opt/cni/bin`, and `ipvsadm` with its libraries is
+available offline as `dpkg -i /opt/pkgs/*.deb`. If a scenario needs another
+tool, add it to `internal/backend/kind/nodeimage/Dockerfile` (and to
+`nodeTools` if its absence should fail the build, or `nodeFiles` for a path)
+rather than installing it during setup: setup must not need internet, and
+every scenario should see the same node.
 
 ## Checks
 
@@ -195,7 +222,12 @@ Every check has `id` (kebab-case, unique), `description`, and optional
 the learner before they have solved anything, so they must not name the fault
 or the answer.
 
-A `ref` is `{kind, name?, namespace?, selector?, fieldSelector?}`.
+A `ref` is `{kind, name?, namespace?, selector?, fieldSelector?}`. A kind the
+cluster does not know, such as a custom resource before its operator is
+installed, reads as zero objects instead of an error, so checks on it fail
+cleanly at baseline. Because a typo reads the same way, every kind used by a
+built-in scenario must be listed in `knownKinds` in
+`internal/validate/embedded_test.go`.
 
 | Type | Fields | Passes when |
 | ---- | ------ | ----------- |
@@ -215,7 +247,15 @@ A `ref` is `{kind, name?, namespace?, selector?, fieldSelector?}`.
 missing key is an empty string.
 
 Command expectations are `exitCode` (default 0), `stdoutContains` and
-`stdoutMatches`. `shell: "..."` runs under `bash -c`.
+`stdoutMatches`. `shell: "..."` runs under `bash -eo pipefail -c` on nodes
+and under `sh` with `set -e` (and `pipefail` where the shell has it) in pods:
+the first command that fails ends the script and fails the check, not only the
+last line. Plan for it: a command that may legitimately fail needs `|| true`
+or a place in an `if`, a pipeline fails when any stage fails (capture the
+output of `cmd | grep -q x` in a variable first, because `grep -q` closing
+the pipe early makes the writer fail), and `a && b` only fails the script
+when `b` fails, so put each assertion on its own line. Unset variables are
+not an error.
 
 `connectivity` execs `/agnhost connect` in the source pod (`probe: nc` uses
 `nc -z`), so source pods must run agnhost or busybox images. A `denied` check

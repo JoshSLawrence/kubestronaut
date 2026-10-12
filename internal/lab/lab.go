@@ -244,27 +244,30 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 	return nil
 }
 
-// removeSetupFiles deletes the setup scripts and manifests from the learner's
-// scenario directory once they ran, because they describe the fault.
+// removeSetupFiles deletes the setup scripts and manifests, and the verbatim
+// files/ directory, from the learner's scenario directory once setup ran,
+// because they describe the fault or are only material for setup.
 func (l *Lab) removeSetupFiles(st *session.State, s *scenario.Scenario) {
 	dir := l.scenarioDir(st.ID, s)
 	protected := s.CheckScriptPaths()
+	paths := []string{scenario.VerbatimDir}
 	for _, step := range s.Spec.Setup {
-		for _, p := range []string{step.Script, step.Manifest} {
-			// Defence in depth: validation rejects these, but a wrong path
-			// here would delete the learner's whole directory.
-			if p == "" || !filepath.IsLocal(p) || filepath.Clean(p) == "." {
-				continue
+		paths = append(paths, step.Script, step.Manifest)
+	}
+	for _, p := range paths {
+		// Defence in depth: validation rejects these, but a wrong path
+		// here would delete the learner's whole directory.
+		if p == "" || !filepath.IsLocal(p) || filepath.Clean(p) == "." {
+			continue
+		}
+		keep := false
+		for _, c := range protected {
+			if scenario.Overlaps(p, c) {
+				keep = true
 			}
-			keep := false
-			for _, c := range protected {
-				if scenario.Overlaps(p, c) {
-					keep = true
-				}
-			}
-			if !keep {
-				_ = os.RemoveAll(filepath.Join(dir, p))
-			}
+		}
+		if !keep {
+			_ = os.RemoveAll(filepath.Join(dir, p))
 		}
 	}
 }

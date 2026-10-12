@@ -9,9 +9,18 @@ import (
 	"strings"
 )
 
+// VerbatimDir holds files that are copied as they are, never templated. It
+// exists for content that contains template syntax of its own, such as a Helm
+// chart's templates/*.yaml, or that is vendored and must keep its checksum.
+const VerbatimDir = "files"
+
 // templated reports whether a file is rendered when materialized. Scripts are
-// never templated: they receive environment variables instead.
+// never templated: they receive environment variables instead. Nothing under
+// VerbatimDir is.
 func templated(name string) bool {
+	if name == VerbatimDir || strings.HasPrefix(name, VerbatimDir+"/") {
+		return false
+	}
 	switch strings.ToLower(path.Ext(name)) {
 	case ".yaml", ".yml", ".json":
 		return true

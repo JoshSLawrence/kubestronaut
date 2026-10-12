@@ -319,6 +319,30 @@ func TestMaterialize(t *testing.T) {
 	}
 }
 
+func TestVerbatimFilesAreNotTemplated(t *testing.T) {
+	fsys := goodFS()
+	chart := "{{ .Values.image }} {{ node \"nope\" }}\n"
+	fsys["cka/demo/files/chart/templates/deploy.yaml"] = &fstest.MapFile{Data: []byte(chart)}
+	fsys["cka/demo/files/data.json"] = &fstest.MapFile{Data: []byte("{{ broken\n")}
+	c := mustLoad(t, fsys)
+	s := c.Scenarios[0]
+	if errs := s.Validate(c.Packs["cka"]); len(errs) != 0 {
+		t.Fatalf("files/ must not be rendered during validation: %v", errs)
+	}
+	dst := t.TempDir()
+	if err := s.Materialize(dst, &TemplateData{Cluster: "ks-cka-demo", Context: "ctx"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Clean(filepath.Join(dst, "files", "chart", "templates", "deploy.yaml")))
+	if err != nil || string(got) != chart {
+		t.Fatalf("verbatim file changed: %q %v", got, err)
+	}
+	// Only the directory named files at the scenario root is verbatim.
+	if templated("files/x.yaml") || templated("files") || !templated("setup/files/x.yaml") || !templated("filesx/a.yaml") {
+		t.Fatal("verbatim applies to the files/ subtree at the scenario root only")
+	}
+}
+
 func TestClusterName(t *testing.T) {
 	if got := ClusterName("cka", "rbac"); got != "ks-cka-rbac" {
 		t.Fatal(got)

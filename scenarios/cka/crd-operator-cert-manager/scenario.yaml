@@ -1,0 +1,115 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: crd-operator-cert-manager
+  title: Install and configure an operator, and work with its CRDs
+  domain: cluster-architecture
+  difficulty: medium
+  tags: [crd, operator, cert-manager]
+spec:
+  timeLimit: 15m
+  weight: 7
+  context: k8s-operator
+  namespaces: [cert-manager, shop]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - quay.io/jetstack/cert-manager-controller:v1.21.2
+    - quay.io/jetstack/cert-manager-webhook:v1.21.2
+    - quay.io/jetstack/cert-manager-cainjector:v1.21.2
+  prompt: prompt.md
+  hints:
+    - "`kubectl explain` documents any resource the cluster knows, including
+      custom ones, and takes a dotted path to a field."
+    - The operator's webhook needs a moment before it accepts new objects.
+      Wait for its pods to be ready.
+  setup:
+    - manifest: setup/shop.yaml
+    - script: setup/operator.sh
+  checks:
+    - id: controller-ready
+      description: deployment cert-manager/cert-manager is rolled out
+      type: ready
+      ref: {kind: deployment, name: cert-manager, namespace: cert-manager}
+      retry: {attempts: 4, interval: 5s}
+    - id: webhook-ready
+      description: deployment cert-manager/cert-manager-webhook is rolled out
+      type: ready
+      ref: {kind: deployment, name: cert-manager-webhook, namespace: cert-manager}
+      retry: {attempts: 4, interval: 5s}
+    - id: cainjector-ready
+      description: deployment cert-manager/cert-manager-cainjector is rolled out
+      type: ready
+      ref: {kind: deployment, name: cert-manager-cainjector, namespace: cert-manager}
+      retry: {attempts: 4, interval: 5s}
+    - id: owner-ref-flag
+      description: the controller deletes a Certificate's Secret with the Certificate
+      weight: 2
+      type: jsonPath
+      ref: {kind: deployment, name: cert-manager, namespace: cert-manager}
+      path: '{.spec.template.spec.containers[0].args}'
+      matches: '"--enable-certificate-owner-ref(=true)?"'
+    - id: running-owner-ref
+      description: the running controller pod was started with that setting
+      weight: 2
+      type: jsonPath
+      ref: {kind: pod, namespace: cert-manager, selector: app.kubernetes.io/name=cert-manager}
+      path: '{.spec.containers[0].args}'
+      matches: '"--enable-certificate-owner-ref(=true)?"'
+      match: all
+      minItems: 1
+      retry: {attempts: 4, interval: 5s}
+    - id: crd-list
+      description: /root/cert-manager-crds.txt lists the CRDs of cert-manager and nothing else
+      weight: 2
+      type: script
+      path: checks/crd-list.sh
+    - id: subject-doc
+      description: /root/subject.txt holds the documentation of Certificate's spec.subject
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        grep -Eq 'FIELD: +subject' /root/subject.txt && grep -q organizations /root/subject.txt
+    - id: issuer-ready
+      description: ClusterIssuer selfsigned is ready
+      weight: 2
+      type: jsonPath
+      ref: {kind: clusterissuer, name: selfsigned}
+      path: '{.status.conditions[?(@.type=="Ready")].status}'
+      equals: 'True'
+      retry: {attempts: 4, interval: 5s}
+    - id: issuer-selfsigned
+      description: ClusterIssuer selfsigned signs with its own key
+      type: jsonPath
+      ref: {kind: clusterissuer, name: selfsigned}
+      path: '{.spec.selfSigned}'
+      nonEmpty: true
+    - id: cert-dns
+      description: Certificate shop/web-cert is for the DNS name web.shop.svc and Secret web-tls
+      weight: 2
+      type: jsonPath
+      ref: {kind: certificate, name: web-cert, namespace: shop}
+      path: '{range .spec.dnsNames[*]}{@}{" "}{end}{.spec.secretName}'
+      equals: 'web.shop.svc web-tls'
+    - id: cert-ready
+      description: Certificate shop/web-cert is ready
+      weight: 2
+      type: jsonPath
+      ref: {kind: certificate, name: web-cert, namespace: shop}
+      path: '{.status.conditions[?(@.type=="Ready")].status}'
+      equals: 'True'
+      retry: {attempts: 4, interval: 5s}
+    - id: secret-issued
+      description: Secret shop/web-tls was issued by cert-manager through ClusterIssuer selfsigned
+      weight: 2
+      type: jsonPath
+      ref: {kind: secret, name: web-tls, namespace: shop}
+      path: '{.metadata.annotations.cert-manager\.io/issuer-name}/{.metadata.annotations.cert-manager\.io/issuer-kind}'
+      equals: selfsigned/ClusterIssuer
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    timeout: 20m

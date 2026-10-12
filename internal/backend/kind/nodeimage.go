@@ -14,7 +14,7 @@ import (
 	"github.com/JoshSLawrence/kubestronaut/internal/execx"
 )
 
-// nodeDockerfile layers exam tooling (vim, nano, etcdctl, ...) over the pinned
+// nodeDockerfile layers exam tooling (vim, nano, etcdctl, helm, ...) over the pinned
 // kind node image, which ships without any editor.
 //
 //go:embed nodeimage/Dockerfile
@@ -27,7 +27,11 @@ const NodeImageRepo = "kubestronaut/node"
 // silently missing package into a clear error instead of a learner finding
 // out halfway through a scenario. Keep it in step with what
 // docs/authoring.md promises scenario authors.
-var nodeTools = []string{"vim", "nano", "less", "etcdctl", "dig", "nslookup", "ps", "netstat"}
+var nodeTools = []string{"vim", "nano", "less", "etcdctl", "etcdutl", "helm", "dig", "nslookup", "ps", "netstat"}
+
+// nodeFiles are paths (globs allowed) that must exist in a built image, for
+// the parts of it that are not commands on PATH.
+var nodeFiles = []string{"/opt/cni/bin/bridge", "/opt/pkgs/ipvsadm_*.deb"}
 
 // NodeImageLabel marks every image kubestronaut builds so stale ones can be
 // found and pruned.
@@ -46,10 +50,32 @@ func NodeImageTag(version string) (string, error) {
 		version = DefaultVersion
 	}
 	h := sha256.New()
+	etcd, err := etcdFor(version)
+	if err != nil {
+		return "", err
+	}
 	h.Write(nodeDockerfile)
 	h.Write([]byte{0})
 	h.Write([]byte(base))
+	h.Write([]byte{0})
+	h.Write([]byte(strings.Join(etcd.buildArgs(), "\n")))
 	return fmt.Sprintf("%s:%s-%s", NodeImageRepo, version, hex.EncodeToString(h.Sum(nil))[:12]), nil
+}
+
+func etcdFor(version string) (etcdRelease, error) {
+	if version == "" {
+		version = DefaultVersion
+	}
+	r, ok := etcdReleases[version]
+	if !ok {
+		return etcdRelease{}, fmt.Errorf("no etcd release pinned for Kubernetes %s: add it to etcdReleases in internal/backend/kind/images.go", version)
+	}
+	return r, nil
+}
+
+// buildArgs are the docker build arguments that select the etcd tools.
+func (r etcdRelease) buildArgs() []string {
+	return []string{"ETCD_VERSION=" + r.Version, "ETCD_SHA256_AMD64=" + r.SHA256AMD64, "ETCD_SHA256_ARM64=" + r.SHA256ARM64}
 }
 
 // imageExists distinguishes "no such image" from docker itself failing, so a
@@ -131,6 +157,15 @@ func (k *Kind) buildNodeImage(ctx context.Context, version string) (string, erro
 	if err != nil {
 		return "", err
 	}
+	etcd, err := etcdFor(version)
+	if err != nil {
+		return "", err
+	}
+	args := []string{"build", "--build-arg", "BASE=" + base}
+	for _, a := range etcd.buildArgs() {
+		args = append(args, "--build-arg", a)
+	}
+	args = append(args, "-t", tag+"-candidate", "-")
 	// Build under a candidate tag and promote it only after the smoke test,
 	// so a broken image never sits under the real tag where later starts
 	// would trust it without testing.
@@ -141,7 +176,7 @@ func (k *Kind) buildNodeImage(ctx context.Context, version string) (string, erro
 	// is caught by the smoke test below instead.
 	res, err := k.Runner.Run(ctx, execx.Cmd{
 		Name:  "docker",
-		Args:  []string{"build", "--build-arg", "BASE=" + base, "-t", candidate, "-"},
+		Args:  args,
 		Stdin: bytes.NewReader(nodeDockerfile),
 	})
 	if err != nil {
@@ -160,7 +195,8 @@ func (k *Kind) buildNodeImage(ctx context.Context, version string) (string, erro
 		defer cancel()
 		_, _ = k.Runner.Run(cctx, execx.Cmd{Name: "docker", Args: []string{"rmi", candidate}})
 	}()
-	check := "for t in " + strings.Join(nodeTools, " ") + `; do command -v "$t" >/dev/null || echo "$t"; done`
+	check := "for t in " + strings.Join(nodeTools, " ") + `; do command -v "$t" >/dev/null || echo "$t"; done` +
+		"; for f in " + strings.Join(nodeFiles, " ") + `; do ls $f >/dev/null 2>&1 || echo "$f"; done`
 	res, err = k.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"run", "--rm", "--entrypoint", "bash", candidate, "-c", check}})
 	if err != nil {
 		return "", fmt.Errorf("docker run: %w", err)

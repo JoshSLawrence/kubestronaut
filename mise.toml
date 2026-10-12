@@ -24,7 +24,7 @@ run = "markdownlint-cli2 '**/*.md'"
 
 [tasks."lint:sh"]
 run = """
-files=$(git ls-files '*.sh')
+files=$(git ls-files '*.sh' 'mise-tasks/*')
 if [ -n "$files" ]; then
   # shellcheck and shfmt take the list as separate arguments on purpose.
   shellcheck $files

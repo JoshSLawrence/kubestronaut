@@ -70,6 +70,7 @@ func newFixture(t *testing.T) *fixture {
 		"cka/demo/setup/m.yaml":       {Data: []byte("kind: Namespace\n")},
 		"cka/demo/solution/solve.sh":  {Data: []byte("true\n")},
 		"cka/demo/solution/README.md": {Data: []byte("Do the thing.\n")},
+		"cka/demo/files/vendor.txt":   {Data: []byte("{{ verbatim }}\n")},
 	}
 	cat := scenario.LoadCatalog(fsys)
 	if len(cat.Problems) != 0 {
@@ -474,7 +475,7 @@ func TestSetupFilesAreRemovedAfterSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(f.lab.Store.SessionDir(mustID(t, f)), "scenario", "cka", "demo")
-	for _, gone := range []string{"setup/s.sh", "setup/m.yaml"} {
+	for _, gone := range []string{"setup/s.sh", "setup/m.yaml", "files"} {
 		if _, err := os.Stat(filepath.Join(dir, gone)); err == nil {
 			t.Errorf("%s must not stay visible to the learner", gone)
 		}

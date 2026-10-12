@@ -80,8 +80,8 @@ spec:
             --certificate-authority=/etc/kubernetes/pki/ca.crt \
             --client-certificate=/root/jane.crt --client-key=/root/jane.key "$@"
         }
-        pods=$(kc auth can-i list pods -n default 2>/dev/null)
-        nodes=$(kc auth can-i list nodes 2>/dev/null)
+        pods=$(kc auth can-i list pods -n default 2>/dev/null || true)
+        nodes=$(kc auth can-i list nodes 2>/dev/null || true)
         # kubectl may add a reason after the answer: "no - RBAC: ..."
         case "$pods" in no | "no "*) ;; *) exit 1 ;; esac
         case "$nodes" in no | "no "*) ;; *) exit 1 ;; esac

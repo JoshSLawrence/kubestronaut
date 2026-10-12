@@ -1,0 +1,88 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: troubleshoot-apiserver
+  title: Bring back a dead API server
+  domain: troubleshooting
+  difficulty: hard
+  tags: [control-plane, apiserver, static-pods, crictl]
+spec:
+  timeLimit: 15m
+  weight: 8
+  context: k8s-apiserver
+  exclusive: true
+  prompt: prompt.md
+  hints:
+    - With the API server down, `kubectl` is useless. The container runtime
+      still knows every container, including stopped ones, and the kubelet
+      writes pod logs to disk.
+    - "`crictl ps -a` and `crictl logs` show why the API server stopped. After
+      you fix one problem, look again: there may be another."
+  setup:
+    - script: setup/break.sh
+      timeout: 5m
+  # Every check runs on the node: the API server is down at the start, and a
+  # check that needs it would report an error instead of a failure.
+  checks:
+    - id: apiserver-answers
+      description: the API server reports itself ready
+      weight: 3
+      type: nodeExec
+      node: controlplane
+      command: [kubectl, get, --raw, /readyz]
+      stdoutContains: ok
+      retry: {attempts: 15, interval: 4s}
+    - id: definition-sound
+      description: the API server's static pod definition is sound
+      weight: 4
+      type: nodeExec
+      node: controlplane
+      shell: |
+        m=/etc/kubernetes/manifests/kube-apiserver.yaml
+        # Each flag is read from the manifest, whatever other arguments surround it.
+        flag() { sed -n "/^[[:space:]]*- --$1=/{s///;p;q;}" "$m"; }
+        etcd=$(flag etcd-servers)
+        # The first endpoint of a comma-separated list is the one tried first.
+        first=${etcd%%,*}
+        case "$first" in
+          https://*:2379) ;;
+          *) exit 1 ;;
+        esac
+        cert=$(flag tls-cert-file)
+        key=$(flag tls-private-key-file)
+        test -f "$cert"
+        test -f "$key"
+        test "$(openssl x509 -in "$cert" -noout -pubkey)" = "$(openssl pkey -in "$key" -pubout)"
+    - id: served-cert
+      description: the certificate presented on port 6443 is valid for kubernetes.default.svc
+      type: nodeExec
+      node: controlplane
+      shell: |
+        # Captured first: grep -q closing the pipe early would fail it under pipefail.
+        sans=$(openssl s_client -connect 127.0.0.1:6443 </dev/null 2>/dev/null | openssl x509 -noout -ext subjectAltName)
+        grep -q 'DNS:kubernetes.default.svc' <<<"$sans"
+      retry: {attempts: 6, interval: 4s}
+    - id: secure-flags-kept
+      description: the API server's authorization and authentication settings are intact
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        m=/etc/kubernetes/manifests/kube-apiserver.yaml
+        grep -Eq -- '^[[:space:]]*- --authorization-mode=Node,RBAC[[:space:]]*$' "$m"
+        grep -Eq -- '^[[:space:]]*- --client-ca-file=/etc/kubernetes/pki/ca.crt[[:space:]]*$' "$m"
+        ! grep -Eq -- '--anonymous-auth([[:space:]]*$|=true)|AlwaysAllow' "$m"
+    - id: nodes-ready
+      description: every node is Ready
+      type: nodeExec
+      node: controlplane
+      shell: |
+        status=$(kubectl get nodes -o 'jsonpath={range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}')
+        test -n "$status" && ! grep -qv '^True$' <<<"$status"
+      retry: {attempts: 6, interval: 4s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [secure-flags-kept]
+    timeout: 15m

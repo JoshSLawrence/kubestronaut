@@ -1,0 +1,93 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: etcd-backup-restore
+  title: Back up etcd and restore an earlier snapshot
+  domain: cluster-architecture
+  difficulty: hard
+  tags: [etcd, backup, restore, static-pods]
+spec:
+  timeLimit: 15m
+  weight: 8
+  context: k8s-etcd
+  namespaces: [vault]
+  exclusive: true
+  prompt: prompt.md
+  hints:
+    - etcd 3.6 split the offline snapshot commands off etcdctl. Check which
+      tool restores a snapshot into a data directory.
+    - The static pod manifest names the directory etcd reads its data from.
+      The kubelet restarts the pod when the manifest changes.
+  setup:
+    - script: setup/record.sh
+      timeout: 5m
+  checks:
+    - id: etcd-ready
+      description: the etcd pod is ready
+      type: ready
+      ref: {kind: pod, namespace: kube-system, selector: component=etcd}
+      retry: {attempts: 20, interval: 6s}
+    - id: apiserver-ready
+      description: the kube-apiserver pod is ready
+      type: ready
+      ref: {kind: pod, namespace: kube-system, selector: component=kube-apiserver}
+      retry: {attempts: 20, interval: 6s}
+    - id: node-ready
+      description: the node controlplane is Ready
+      type: ready
+      ref: {kind: node, name: '{{node "controlplane"}}'}
+      retry: {attempts: 20, interval: 6s}
+    - id: now-snapshot-valid
+      description: /opt/backup/now.db is a readable etcd snapshot
+      type: nodeExec
+      node: controlplane
+      command: [etcdutl, snapshot, status, /opt/backup/now.db, -w, json]
+    - id: now-snapshot-state
+      description: /opt/backup/now.db holds the state the cluster had before the restore
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      # The snapshot is a bbolt file; keys are stored in plain text. The
+      # object created after golden.db was taken only exists in a snapshot
+      # taken before the restore.
+      shell: grep -aqF /registry/configmaps/vault/post-snapshot /opt/backup/now.db
+    - id: restored-dir
+      description: /var/lib/etcd-golden holds an etcd data directory
+      type: nodeExec
+      node: controlplane
+      command: [test, -f, /var/lib/etcd-golden/member/snap/db]
+    - id: etcd-uses-dir
+      description: the running etcd pod stores its data in /var/lib/etcd-golden
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      # Read the manifest the kubelet runs, not the mirror pod, which can lag
+      # behind it for a while. --local needs no API server. The data
+      # directory flag, the mount that backs it and the host path must agree,
+      # whichever of them the learner edited.
+      shell: |
+        kubectl annotate --local -f /etc/kubernetes/manifests/etcd.yaml ks=1 -o json | jq -e '
+          [.spec | . as $s | .containers[0] as $c
+            | $s.volumes[] | select(.hostPath.path == "/var/lib/etcd-golden") | .name as $vol
+            | $c.volumeMounts[] | select(.name == $vol) | .mountPath as $mnt
+            | $c.command[] | select(. == "--data-dir=" + $mnt)]
+          | length > 0' >/dev/null
+      retry: {attempts: 5, interval: 3s}
+    - id: golden-restored
+      description: the objects from golden.db are back, with their original identity
+      weight: 3
+      type: script
+      path: checks/restored.sh
+      retry: {attempts: 5, interval: 3s}
+    - id: post-snapshot-gone
+      description: configmap vault/post-snapshot does not exist
+      type: resourceExists
+      ref: {kind: configmap, name: post-snapshot, namespace: vault}
+      absent: true
+      retry: {attempts: 5, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [etcd-ready, apiserver-ready, node-ready]
+    timeout: 15m

@@ -827,8 +827,11 @@ the e2e validation proves it.
 - **Node image build.** The pinned image has no editor, so `Backend.Prepare`
   builds `kubestronaut/node:<version>-<hash>` on top of it before the first
   create for that version (`internal/backend/kind/nodeimage/Dockerfile`:
-  vim, nano, less, etcd-client, dnsutils, procps, net-tools, a YAML-friendly
-  vimrc and the `k` alias). The hash covers the Dockerfile and base image.
+  vim, nano, less, dnsutils, procps, net-tools, a YAML-friendly vimrc and the
+  `k` alias, plus checksum-verified etcdctl/etcdutl, Helm and the bridge CNI
+  plugin, and the ipvsadm packages as .deb files). The etcd release is pinned
+  per Kubernetes version in `images.go`. The hash covers the Dockerfile, base
+  image and etcd pin.
   The build goes to a `-candidate` tag and is promoted only after a smoke
   test confirms the tools exist, so a broken image never sits under the real
   tag. Prepare has its own 15m budget so a slow first build cannot eat into
