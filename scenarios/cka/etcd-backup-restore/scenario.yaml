@@ -62,8 +62,9 @@ spec:
       type: nodeExec
       node: controlplane
       # Read the manifest the kubelet runs, not the mirror pod, which can lag
-      # behind it for a while. --local needs no API server. The data directory flag, the mount that backs
-      # it and the host path must agree, whichever of them the learner edited.
+      # behind it for a while. --local needs no API server. The data
+      # directory flag, the mount that backs it and the host path must agree,
+      # whichever of them the learner edited.
       shell: |
         kubectl annotate --local -f /etc/kubernetes/manifests/etcd.yaml ks=1 -o json | jq -e '
           [.spec | . as $s | .containers[0] as $c

@@ -42,8 +42,10 @@ spec:
         # Each flag is read from the manifest, whatever other arguments surround it.
         flag() { sed -n "/^[[:space:]]*- --$1=/{s///;p;q;}" "$m"; }
         etcd=$(flag etcd-servers)
-        case "$etcd" in
-          https://*:2379 | https://*:2379,*) ;;
+        # The first endpoint of a comma-separated list is the one tried first.
+        first=${etcd%%,*}
+        case "$first" in
+          https://*:2379) ;;
           *) exit 1 ;;
         esac
         cert=$(flag tls-cert-file)

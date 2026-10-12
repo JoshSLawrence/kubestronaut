@@ -82,7 +82,8 @@ for _ in $(seq 90); do
   cp=$(kubectl top node "$(ks_node_name controlplane)" --no-headers 2>/dev/null | awk '{print $4}' || true)
   worker=${worker%Mi}
   cp=${cp%Mi}
-  case "$worker$cp" in '' | *[!0-9]*) worker=0 cp=0 ;; esac
+  case "$worker" in '' | *[!0-9]*) worker=0 ;; esac
+  case "$cp" in '' | *[!0-9]*) cp=0 ;; esac
   if [ "$top" = "$busy" ] && [ "$nodes" -ge 2 ] && [ "$hog" -ge 800 ] && [ "$worker" -ge $((cp + 200)) ]; then
     exit 0
   fi
