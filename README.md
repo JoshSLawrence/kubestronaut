@@ -77,13 +77,16 @@ Exit codes: 0 success or grade passed, 1 grade or validation did not pass,
 The stock kind node image has no editor, but the exam expects you to edit
 manifests and kubelet config on the node. So the first `start` for each
 Kubernetes version builds `kubestronaut/node:<version>-<hash>` locally on top
-of the pinned kind image. It adds `vim`, `nano`, `less`, `etcdctl`, DNS and
-process tools, vim settings for YAML (two-space indent, no tabs), and the `k`
-alias with completion for kubectl. The build usually takes under a minute and
-needs internet once; later starts reuse it. The hash covers the Dockerfile
-(`internal/backend/kind/nodeimage/Dockerfile`) and the base image, so changing
-either rebuilds. `kubestronaut doctor` says whether it is built yet and lists
-old images you can remove.
+of the pinned kind image. It adds `vim`, `nano`, `less`, DNS and process
+tools, vim settings for YAML (two-space indent, no tabs), and the `k` alias
+with completion for kubectl. It also adds `etcdctl` and `etcdutl` in the etcd
+release that matches the cluster's etcd, Helm 3.22.0, the `bridge` CNI plugin
+(in `/opt/cni/bin`) and the `ipvsadm` packages as `.deb` files in `/opt/pkgs`.
+Every download is checked against a pinned sha256. The build usually takes
+under a minute and needs internet once; later starts reuse it. The hash
+covers the Dockerfile (`internal/backend/kind/nodeimage/Dockerfile`), the base
+image and the etcd pin, so changing any of them rebuilds. `kubestronaut
+doctor` says whether it is built yet and lists old images you can remove.
 
 `--node-image` uses your own image instead and skips the build; it will lack
 the editors unless you add them. `reset` keeps the same image.

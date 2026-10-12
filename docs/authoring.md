@@ -191,12 +191,15 @@ fails so a key cannot escape the directory.
 ### Tools on the nodes
 
 Nodes run kubestronaut's node image (see the README), so prompts and
-solutions can rely on `vim`, `nano`, `less`, `etcdctl`, `nslookup`/`dig`,
-`ps` and `netstat` on every node, plus the kind image's `curl`, `jq` and
-`crictl`. If a scenario needs another tool, add it to
-`internal/backend/kind/nodeimage/Dockerfile` (and to `nodeTools` if its
-absence should fail the build) rather than installing it during setup: setup
-must not need internet, and every scenario should see the same node.
+solutions can rely on `vim`, `nano`, `less`, `etcdctl` and `etcdutl` (the
+etcd release that matches the cluster), `helm`, `nslookup`/`dig`, `ps` and
+`netstat` on every node, plus the kind image's `curl`, `jq` and `crictl`. The
+`bridge` CNI plugin is in `/opt/cni/bin`, and `ipvsadm` with its libraries is
+available offline as `dpkg -i /opt/pkgs/*.deb`. If a scenario needs another
+tool, add it to `internal/backend/kind/nodeimage/Dockerfile` (and to
+`nodeTools` if its absence should fail the build, or `nodeFiles` for a path)
+rather than installing it during setup: setup must not need internet, and
+every scenario should see the same node.
 
 ## Checks
 

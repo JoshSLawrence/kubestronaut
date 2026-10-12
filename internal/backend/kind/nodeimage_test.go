@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -34,26 +35,75 @@ func TestNodeImageTag(t *testing.T) {
 }
 
 func TestDockerfileInstallsExamTools(t *testing.T) {
-	// Each promised tool maps to the package that provides it, so adding to
-	// nodeTools without a matching package fails here, not at build time.
+	// Each promised tool maps to the text in the Dockerfile that provides it,
+	// so adding to nodeTools without installing it fails here, not at build
+	// time. Distribution packages are listed one per line; the rest are
+	// downloaded and verified.
+	df := string(nodeDockerfile)
 	pkgs := map[string]string{
-		"vim": "vim", "nano": "nano", "less": "less", "etcdctl": "etcd-client",
+		"vim": "vim", "nano": "nano", "less": "less",
 		"dig": "dnsutils", "nslookup": "dnsutils", "ps": "procps", "netstat": "net-tools",
 	}
+	downloads := map[string]string{
+		"etcdctl": "${dir}/etcdctl", "etcdutl": "${dir}/etcdutl", "helm": "linux-${arch}/helm",
+	}
 	for _, tool := range nodeTools {
-		pkg, ok := pkgs[tool]
-		if !ok {
-			t.Errorf("no package known for tool %q: add it to this test", tool)
+		if pkg, ok := pkgs[tool]; ok {
+			if !strings.Contains(df, "    "+pkg+" \\") {
+				t.Errorf("Dockerfile does not install %s (for %s)", pkg, tool)
+			}
 			continue
 		}
-		if !strings.Contains(string(nodeDockerfile), "    "+pkg+" \\") {
-			t.Errorf("Dockerfile does not install %s (for %s)", pkg, tool)
+		if marker, ok := downloads[tool]; ok {
+			if !strings.Contains(df, marker) {
+				t.Errorf("Dockerfile does not extract %s", tool)
+			}
+			continue
 		}
+		t.Errorf("no package or download known for tool %q: add it to this test", tool)
 	}
-	for _, want := range []string{"ARG BASE", "FROM ${BASE}", "expandtab", "alias k=kubectl", NodeImageLabel} {
-		if !strings.Contains(string(nodeDockerfile), want) {
+	if strings.Contains(df, "etcd-client") {
+		t.Error("the Debian etcd-client must not come back: its version does not match the cluster")
+	}
+	// Every download is checked against a pinned checksum.
+	if n, want := strings.Count(df, "curl -fsSL"), strings.Count(df, "sha256sum -c -"); n != want {
+		t.Errorf("%d downloads but %d checksum verifications", n, want)
+	}
+	for _, want := range []string{"ARG BASE", "FROM ${BASE}", "expandtab", "alias k=kubectl", NodeImageLabel,
+		"/opt/cni/bin", "./bridge", "/opt/pkgs", "ipvsadm", "ARG ETCD_VERSION"} {
+		if !strings.Contains(df, want) {
 			t.Errorf("Dockerfile lacks %q", want)
 		}
+	}
+}
+
+func TestEtcdReleasesCoverEveryVersion(t *testing.T) {
+	hex64 := regexp.MustCompile(`^[0-9a-f]{64}$`)
+	for _, v := range Versions() {
+		r, err := etcdFor(v)
+		if err != nil {
+			t.Fatalf("%s: %v", v, err)
+		}
+		if !regexp.MustCompile(`^3\.\d+\.\d+$`).MatchString(r.Version) ||
+			!hex64.MatchString(r.SHA256AMD64) || !hex64.MatchString(r.SHA256ARM64) || r.SHA256AMD64 == r.SHA256ARM64 {
+			t.Errorf("%s: malformed etcd pin %+v", v, r)
+		}
+	}
+	if len(etcdReleases) != len(nodeImages) {
+		t.Errorf("etcdReleases has %d entries for %d Kubernetes versions", len(etcdReleases), len(nodeImages))
+	}
+	if _, err := etcdFor("v0"); err == nil || !strings.Contains(err.Error(), "images.go") {
+		t.Fatalf("an unpinned version must say where to add it: %v", err)
+	}
+}
+
+func TestNodeImageTagFollowsEtcdPin(t *testing.T) {
+	before, _ := NodeImageTag("v1.36.4")
+	saved := etcdReleases["v1.36.4"]
+	t.Cleanup(func() { etcdReleases["v1.36.4"] = saved })
+	etcdReleases["v1.36.4"] = etcdRelease{"3.6.9", saved.SHA256AMD64, saved.SHA256ARM64}
+	if after, _ := NodeImageTag("v1.36.4"); after == before {
+		t.Fatal("changing the etcd pin must rebuild the node image")
 	}
 }
 
@@ -100,14 +150,21 @@ func TestPrepareBuildsAndSmokeTests(t *testing.T) {
 		t.Fatalf("want a build and a smoke test: %v", f.Lines())
 	}
 	base, _ := ResolveImage("v1.37.0", "")
-	if got := strings.Join(build.Args, " "); got != "build --build-arg BASE="+base+" -t "+tag+"-candidate -" {
+	etcd := etcdReleases["v1.37.0"]
+	wantArgs := "build --build-arg BASE=" + base + " --build-arg ETCD_VERSION=" + etcd.Version +
+		" --build-arg ETCD_SHA256_AMD64=" + etcd.SHA256AMD64 + " --build-arg ETCD_SHA256_ARM64=" + etcd.SHA256ARM64 +
+		" -t " + tag + "-candidate -"
+	if got := strings.Join(build.Args, " "); got != wantArgs {
 		t.Fatalf("build args: %s", got)
 	}
 	if b, _ := io.ReadAll(build.Stdin); string(b) != string(nodeDockerfile) {
 		t.Fatal("the Dockerfile must go in on stdin")
 	}
-	if args := strings.Join(smoke.Args, " "); !strings.Contains(args, "vim") || !strings.Contains(args, tag+"-candidate") {
-		t.Fatalf("smoke test must check the candidate for vim: %v", smoke.Args)
+	args := strings.Join(smoke.Args, " ")
+	for _, want := range []string{"vim", "etcdutl", "helm", "/opt/cni/bin/bridge", "ipvsadm", tag + "-candidate"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("smoke test must check the candidate for %s: %v", want, smoke.Args)
+		}
 	}
 	lines := strings.Join(f.Lines(), "\n")
 	if !strings.Contains(lines, "docker tag "+tag+"-candidate "+tag) || !strings.Contains(lines, "docker rmi "+tag+"-candidate") {

@@ -20,6 +20,27 @@ var nodeImages = map[string]string{
 	"v1.37.0": "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5",
 }
 
+// etcdRelease is an etcd release whose etcdctl and etcdutl go into the node
+// image, with the sha256 of its linux tarballs from the release's SHA256SUMS.
+type etcdRelease struct {
+	Version, SHA256AMD64, SHA256ARM64 string
+}
+
+// etcdReleases pins the etcd tools for each supported Kubernetes version to
+// the etcd that kubeadm of that version runs (cmd/kubeadm/app/constants), so
+// snapshots taken in a lab are read by matching tools.
+var etcdReleases = map[string]etcdRelease{
+	"v1.35.8": {"3.6.6",
+		"887afaa4a99f22d802ccdfbe65730a5e79aa5c9ce2c8799c67e9d804c50ecedb",
+		"8a15f5427c111ff4692753682374970fb68878401d946c2c28bdad6857db652f"},
+	"v1.36.4": {"3.6.8",
+		"cf9cfe91a4856cb90eed9c99e6aee4b708db2c7888b88a6f116281f04b0ea693",
+		"438f56a700d17ce761510a3e63e6fa5c1d587b2dd4d7a22c179c09a649366760"},
+	"v1.37.0": {"3.7.0",
+		"b05cb07f5686dab8f9cdab89986b44f0dd24aaf5c627176aff325e21fa56f9f0",
+		"e61a0954fe6a3003ee20f45e773e12e15c58323ea485deb8a55d065170cdafe8"},
+}
+
 // Versions lists the supported Kubernetes versions.
 func Versions() []string {
 	out := make([]string, 0, len(nodeImages))
