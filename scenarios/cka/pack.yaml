@@ -1,0 +1,13 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Pack
+metadata:
+  name: cka
+spec:
+  title: Certified Kubernetes Administrator
+  passPercent: 66
+  domains:
+    - {id: cluster-architecture, title: Cluster Architecture, weight: 25}
+    - {id: workloads-scheduling, title: Workloads & Scheduling, weight: 15}
+    - {id: services-networking, title: Services & Networking, weight: 20}
+    - {id: storage, title: Storage, weight: 10}
+    - {id: troubleshooting, title: Troubleshooting, weight: 30}

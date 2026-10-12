@@ -1,0 +1,36 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-added-large-files
+  - repo: local
+    hooks:
+      # Calling mise keeps hook tool versions identical to CI.
+      - id: lint-go
+        name: lint go
+        entry: mise run lint:go
+        language: system
+        types: [go]
+        pass_filenames: false
+      - id: lint-md
+        name: lint markdown
+        entry: mise run lint:md
+        language: system
+        types: [markdown]
+        pass_filenames: false
+      - id: lint-sh
+        name: lint shell
+        entry: mise run lint:sh
+        language: system
+        types: [shell]
+        pass_filenames: false
+      - id: test
+        name: go test
+        entry: mise run test
+        language: system
+        types: [go]
+        pass_filenames: false

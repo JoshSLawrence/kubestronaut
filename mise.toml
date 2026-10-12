@@ -1,0 +1,49 @@
+[tools]
+actionlint = "1.7.12"
+go = "1.27.2"
+golangci-lint = "2.14.0"
+kind = "0.33.0"
+kubectl = "1.37.1"
+markdownlint-cli2 = "0.23.3"
+node = "26.11.1"
+pre-commit = "4.6.2"
+shellcheck = "0.11.0"
+shfmt = "3.14.1"
+
+[tasks.build]
+run = "go build -o bin/kubestronaut ./cmd/kubestronaut"
+
+[tasks.test]
+run = "go test -race -timeout 5m ./..."
+
+[tasks."lint:go"]
+run = "golangci-lint run --timeout 5m"
+
+[tasks."lint:md"]
+run = "markdownlint-cli2 '**/*.md'"
+
+[tasks."lint:sh"]
+run = """
+files=$(git ls-files '*.sh')
+if [ -n "$files" ]; then
+  # shellcheck and shfmt take the list as separate arguments on purpose.
+  shellcheck $files
+  shfmt -d -i 2 -ci $files
+fi
+"""
+
+[tasks."lint:actions"]
+run = "actionlint"
+
+[tasks.lint]
+depends = ["lint:go", "lint:md", "lint:sh", "lint:actions"]
+
+[tasks.validate]
+run = "go run ./cmd/kubestronaut validate --all"
+
+[tasks.e2e]
+# KS_E2E_TIMEOUT lets CI set a go test timeout below its job timeout.
+run = 'KS_E2E=1 go test -tags e2e -timeout "${KS_E2E_TIMEOUT:-90m}" ./test/e2e/'
+
+[tasks.ci]
+depends = ["lint", "test", "validate"]

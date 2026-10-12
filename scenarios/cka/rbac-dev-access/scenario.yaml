@@ -1,0 +1,188 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: rbac-dev-access
+  title: Give a service account limited access with RBAC
+  domain: cluster-architecture
+  difficulty: easy
+  tags: [rbac, serviceaccount]
+spec:
+  timeLimit: 8m
+  weight: 4
+  context: k8s-rbac
+  namespaces: [dev]
+  exclusive: false
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl create role` takes --verb and --resource; a Role with two rules
+      is easiest to write as YAML."
+    - "A RoleBinding grants a Role inside one namespace. Reading nodes needs a
+      ClusterRole and a ClusterRoleBinding, because nodes are cluster-scoped."
+  setup:
+    - manifest: setup/workloads.yaml
+    - wait:
+        ref: {kind: deployment, name: web, namespace: dev}
+        for: condition=Available
+  checks:
+    - id: sa-exists
+      description: ServiceAccount dev/deployer exists
+      type: resourceExists
+      ref: {kind: serviceaccount, name: deployer, namespace: dev}
+    - id: role-exists
+      description: Role dev/deployer exists
+      type: resourceExists
+      ref: {kind: role, name: deployer, namespace: dev}
+    - id: clusterrole-exists
+      description: ClusterRole node-reader exists
+      type: resourceExists
+      ref: {kind: clusterrole, name: node-reader}
+    - id: rolebinding-binds-role
+      description: RoleBinding dev/deployer binds Role deployer to the service account
+      type: jsonPath
+      ref: {kind: rolebinding, name: deployer, namespace: dev}
+      path: '{.roleRef.kind}/{.roleRef.name} {range .subjects[*]}{.kind}/{.namespace}/{.name} {end}'
+      matches: '^Role/deployer .*ServiceAccount/dev/deployer'
+    - id: clusterrolebinding-binds-role
+      description: ClusterRoleBinding deployer-node-reader binds ClusterRole node-reader to the service account
+      type: jsonPath
+      ref: {kind: clusterrolebinding, name: deployer-node-reader}
+      path: '{.roleRef.kind}/{.roleRef.name} {range .subjects[*]}{.kind}/{.namespace}/{.name} {end}'
+      matches: '^ClusterRole/node-reader .*ServiceAccount/dev/deployer'
+    - id: create-deployments
+      description: deployer can create deployments in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: create
+      resource: deployments.apps
+      namespace: dev
+    - id: delete-deployments
+      description: deployer can delete deployments in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: delete
+      resource: deployments.apps
+      namespace: dev
+    - id: list-pods
+      description: deployer can list pods in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: list
+      resource: pods
+      namespace: dev
+    - id: list-nodes
+      description: deployer can list nodes
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: list
+      resource: nodes
+    - id: no-create-in-default
+      description: deployer cannot create deployments in default
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: create
+      resource: deployments.apps
+      namespace: default
+      allowed: false
+    - id: no-secrets
+      description: deployer cannot read secrets in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: get
+      resource: secrets
+      namespace: dev
+      allowed: false
+    - id: no-configmaps
+      description: deployer cannot read configmaps in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: get
+      resource: configmaps
+      namespace: dev
+      allowed: false
+    - id: no-create-pods
+      description: deployer cannot create pods in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: create
+      resource: pods
+      namespace: dev
+      allowed: false
+    - id: no-delete-pods
+      description: deployer cannot delete pods in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: delete
+      resource: pods
+      namespace: dev
+      allowed: false
+    - id: no-pod-exec
+      description: deployer cannot exec into pods in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: create
+      resource: pods
+      subresource: exec
+      namespace: dev
+      allowed: false
+    - id: no-delete-nodes
+      description: deployer cannot delete nodes
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: delete
+      resource: nodes
+      allowed: false
+    - id: no-update-nodes
+      description: deployer cannot update nodes
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: update
+      resource: nodes
+      allowed: false
+    - id: no-delete-statefulsets
+      description: deployer cannot delete statefulsets in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: delete
+      resource: statefulsets.apps
+      namespace: dev
+      allowed: false
+    - id: no-deletecollection
+      description: deployer cannot delete deployments in bulk in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: deletecollection
+      resource: deployments.apps
+      namespace: dev
+      allowed: false
+    - id: no-list-pods-default
+      description: deployer cannot list pods in default
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: list
+      resource: pods
+      namespace: default
+      allowed: false
+    - id: not-cluster-admin
+      description: deployer is not bound to cluster-admin
+      type: script
+      path: checks/no-cluster-admin.sh
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution:
+      - no-create-in-default
+      - no-secrets
+      - no-configmaps
+      - no-create-pods
+      - no-delete-pods
+      - no-pod-exec
+      - no-delete-nodes
+      - no-update-nodes
+      - no-delete-statefulsets
+      - no-deletecollection
+      - no-list-pods-default
+      - not-cluster-admin
+    timeout: 10m
