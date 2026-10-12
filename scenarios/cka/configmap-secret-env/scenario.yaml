@@ -78,10 +78,8 @@ spec:
       retry: {attempts: 8, interval: 4s}
     - id: mount-readonly
       description: the file is mounted read-only
-      type: jsonPath
-      ref: {kind: deployment, name: api, namespace: config}
-      path: '{.spec.template.spec.containers[0].volumeMounts[?(@.mountPath=="/etc/app/app.properties")].readOnly}{.spec.template.spec.containers[0].volumeMounts[?(@.mountPath=="/etc/app")].readOnly}'
-      equals: 'true'
+      type: script
+      path: checks/mount-readonly.sh
     - id: api-ready
       description: deployment config/api is fully rolled out
       type: ready
