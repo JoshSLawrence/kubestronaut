@@ -117,6 +117,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/storage-pv-pvc`                 | storage              | 1     | 8m   |
 | `cka/storage-pvc-pending`            | storage              | 1     | 10m  |
 | `cka/storageclass-dynamic`           | storage              | 1     | 10m  |
+| `cka/troubleshoot-apiserver`         | troubleshooting      | 1     | 15m  |
 | `cka/troubleshoot-control-plane`     | troubleshooting      | 1     | 12m  |
 | `cka/troubleshoot-coredns`           | troubleshooting      | 1     | 12m  |
 | `cka/troubleshoot-crashloop-logs`    | troubleshooting      | 1     | 8m   |
