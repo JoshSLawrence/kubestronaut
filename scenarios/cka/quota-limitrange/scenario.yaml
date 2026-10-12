@@ -38,7 +38,7 @@ spec:
       weight: 3
       type: jsonPath
       ref: {kind: resourcequota, name: team-a-quota, namespace: team-a}
-      path: '{.spec.hard.pods}/{.spec.hard.requests\.cpu}/{.spec.hard.limits\.memory}'
+      path: '{.spec.hard.pods}/{.spec.hard.requests\.cpu}{.spec.hard.cpu}/{.spec.hard.limits\.memory}'
       equals: 5/1/1Gi
     - id: quota-active
       description: the quota is counting the namespace's pods
