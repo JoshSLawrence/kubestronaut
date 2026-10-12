@@ -69,6 +69,33 @@ spec:
         --client-key=/root/jane.key
         auth whoami -o 'jsonpath={.status.userInfo.username}'
       stdoutMatches: '^jane$'
+    - id: cert-no-extra-access
+      description: with the certificate, jane has no access to pods in default or to nodes
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        kc() {
+          kubectl --kubeconfig=/dev/null --server=https://127.0.0.1:6443 \
+            --certificate-authority=/etc/kubernetes/pki/ca.crt \
+            --client-certificate=/root/jane.crt --client-key=/root/jane.key "$@"
+        }
+        pods=$(kc auth can-i list pods -n default 2>/dev/null)
+        nodes=$(kc auth can-i list nodes 2>/dev/null)
+        [ "$pods" = no ] && [ "$nodes" = no ]
+    - id: cert-groups
+      description: the certificate puts jane in no group beyond the default one
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: >-
+        kubectl --kubeconfig=/dev/null
+        --server=https://127.0.0.1:6443
+        --certificate-authority=/etc/kubernetes/pki/ca.crt
+        --client-certificate=/root/jane.crt
+        --client-key=/root/jane.key
+        auth whoami -o 'jsonpath={.status.userInfo.groups[*]}'
+      stdoutMatches: '^system:authenticated$'
     - id: role-exists
       description: Role finance/pod-reader exists
       type: resourceExists
@@ -130,6 +157,14 @@ spec:
       subresource: exec
       namespace: finance
       allowed: false
+    - id: no-configmaps
+      description: jane cannot read configmaps in finance
+      type: canI
+      as: jane
+      verb: get
+      resource: configmaps
+      namespace: finance
+      allowed: false
     - id: no-secrets
       description: jane cannot read secrets in finance
       type: canI
@@ -169,6 +204,7 @@ spec:
       - no-delete-pods
       - no-create-pods
       - no-exec
+      - no-configmaps
       - no-secrets
       - no-pods-default
       - no-nodes
