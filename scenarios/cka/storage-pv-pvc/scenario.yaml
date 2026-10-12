@@ -1,0 +1,77 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: storage-pv-pvc
+  title: Provision static storage with a PersistentVolume and a claim
+  domain: storage
+  difficulty: easy
+  tags: [pv, pvc, hostpath]
+spec:
+  timeLimit: 8m
+  weight: 4
+  context: k8s-pv
+  namespaces: [app]
+  exclusive: false
+  images:
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - A claim binds to a volume only when the storage class names match.
+    - A claim that names no class gets the cluster's default class.
+  setup:
+    - manifest: setup/namespace.yaml
+  checks:
+    - id: pv-spec
+      description: PersistentVolume pv-logs has the requested size, mode and path
+      weight: 2
+      type: jsonPath
+      ref: {kind: persistentvolume, name: pv-logs}
+      path: '{.spec.capacity.storage}/{.spec.accessModes[*]}/{.spec.storageClassName}/{.spec.hostPath.path}'
+      equals: 1Gi/ReadWriteOnce/manual//mnt/logs
+    - id: pv-retain
+      description: pv-logs keeps its data when the claim goes away
+      type: jsonPath
+      ref: {kind: persistentvolume, name: pv-logs}
+      path: '{.spec.persistentVolumeReclaimPolicy}'
+      equals: Retain
+    - id: pvc-bound
+      description: PersistentVolumeClaim app/logs is bound
+      type: ready
+      ref: {kind: persistentvolumeclaim, name: logs, namespace: app}
+      retry: {attempts: 3, interval: 3s}
+    - id: pvc-volume
+      description: the claim is bound to pv-logs and not to another volume
+      weight: 2
+      type: jsonPath
+      ref: {kind: persistentvolumeclaim, name: logs, namespace: app}
+      path: '{.spec.volumeName}/{.spec.storageClassName}'
+      equals: pv-logs/manual
+    - id: pod-uses-claim
+      description: pod app/logger mounts the claim at /var/log/app
+      type: jsonPath
+      ref: {kind: pod, name: logger, namespace: app}
+      path: '{.spec.volumes[*].persistentVolumeClaim.claimName}/{.spec.containers[0].volumeMounts[*].mountPath}'
+      matches: '^logs/.*/var/log/app'
+    - id: pod-ready
+      description: pod app/logger is running
+      type: ready
+      ref: {kind: pod, name: logger, namespace: app}
+      retry: {attempts: 4, interval: 3s}
+    - id: data-in-pod
+      description: the logger wrote its log file
+      type: podExec
+      ref: {kind: pod, name: logger, namespace: app}
+      command: [test, -s, /var/log/app/out.log]
+      retry: {attempts: 3, interval: 3s}
+    - id: data-on-node
+      description: the log file is on the node under /mnt/logs
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      command: [test, -s, /mnt/logs/out.log]
+      retry: {attempts: 3, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    timeout: 8m
