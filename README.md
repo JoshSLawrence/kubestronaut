@@ -108,6 +108,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/etcd-backup-restore`            | cluster-architecture | 1     | 15m  |
 | `cka/helm-install-rollback`          | cluster-architecture | 1     | 12m  |
 | `cka/hpa-autoscale`                  | workloads-scheduling | 2     | 10m  |
+| `cka/ingress-traefik`                | services-networking  | 2     | 12m  |
 | `cka/kubeadm-certs-renew`            | cluster-architecture | 1     | 10m  |
 | `cka/kustomize-overlay`              | cluster-architecture | 2     | 12m  |
 | `cka/monitor-resource-usage`         | troubleshooting      | 2     | 8m   |

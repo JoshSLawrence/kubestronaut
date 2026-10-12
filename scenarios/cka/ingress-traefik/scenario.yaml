@@ -1,0 +1,130 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: ingress-traefik
+  title: Route HTTP and HTTPS traffic with an Ingress
+  domain: services-networking
+  difficulty: medium
+  tags: [ingress, traefik, tls]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-ingress
+  namespaces: [shop, traefik]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - docker.io/traefik:v3.7.14
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl create ingress --help` has examples with rules, paths and TLS.
+      `kubectl explain ingress.spec` lists the fields."
+    - "`kubectl get ingressclass` shows which class is the default."
+  setup:
+    - manifest: setup/shop.yaml
+    - wait:
+        ref: {kind: deployment, name: api, namespace: shop}
+        for: condition=Available
+    - wait:
+        ref: {kind: deployment, name: web, namespace: shop}
+        for: condition=Available
+    - script: setup/traefik.sh
+      timeout: 5m
+  checks:
+    - id: ingress-exists
+      description: Ingress shop/shop exists
+      type: resourceExists
+      ref: {kind: ingress, name: shop, namespace: shop}
+    - id: ingress-class
+      description: Ingress shop/shop selects the Traefik ingress class
+      type: jsonPath
+      ref: {kind: ingress, name: shop, namespace: shop}
+      path: '{.spec.ingressClassName}{.metadata.annotations.kubernetes\.io/ingress\.class}'
+      equals: traefik
+    - id: api-route
+      description: http://shop.example.local/api and everything below it reach the api backend
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 20s
+      retry: {attempts: 5, interval: 2s}
+      shell: |
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        for path in /api /api/ /api/v1/items; do
+          body=$(curl -s --max-time 5 -H 'Host: shop.example.local' "http://$ip:30080$path" || true)
+          if [ "$body" != "api" ]; then
+            echo "$path answered '$body', want 'api'" >&2
+            exit 1
+          fi
+        done
+    - id: web-route
+      description: http://shop.example.local/ and every other path reach the web backend
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 20s
+      retry: {attempts: 5, interval: 2s}
+      shell: |
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        for path in / /shop /index.html /v1/api; do
+          body=$(curl -s --max-time 5 -H 'Host: shop.example.local' "http://$ip:30080$path" || true)
+          if [ "$body" != "web" ]; then
+            echo "$path answered '$body', want 'web'" >&2
+            exit 1
+          fi
+        done
+    - id: other-host-unrouted
+      description: requests for another host are not routed to the backends
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 20s
+      shell: |
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        for path in / /api; do
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Host: other.example.local' "http://$ip:30080$path" || true)
+          if [ "$code" != "404" ]; then
+            echo "host other.example.local$path answered $code, want 404" >&2
+            exit 1
+          fi
+        done
+    - id: tls-secret
+      description: Secret shop/shop-tls is a TLS Secret that holds the certificate from /opt/certs
+      type: script
+      path: checks/tls-secret.sh
+    - id: https-route
+      description: https://shop.example.local reaches both backends through port 30443
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 20s
+      retry: {attempts: 5, interval: 2s}
+      shell: |
+        ips=$(kubectl get node "$(hostname)" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+        ip=${ips%% *}
+        for want in api web; do
+          path=/$want
+          [ "$want" = web ] && path=/
+          body=$(curl -sk --max-time 5 --resolve "shop.example.local:30443:$ip" "https://shop.example.local:30443$path" || true)
+          if [ "$body" != "$want" ]; then
+            echo "https $path answered '$body', want '$want'" >&2
+            exit 1
+          fi
+        done
+    - id: tls-served
+      description: the certificate served for shop.example.local on port 30443 is the one from /opt/certs
+      weight: 2
+      type: script
+      path: checks/tls-served.sh
+      retry: {attempts: 5, interval: 2s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [other-host-unrouted]
+    timeout: 15m
