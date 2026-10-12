@@ -117,6 +117,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/monitor-resource-usage`         | troubleshooting      | 2     | 8m   |
 | `cka/networkpolicy-isolate`          | services-networking  | 1     | 10m  |
 | `cka/networkpolicy-least-permissive` | services-networking  | 1     | 8m   |
+| `cka/node-infra-prep`                | cluster-architecture | 2     | 12m  |
 | `cka/node-maintenance-drain`         | cluster-architecture | 3     | 10m  |
 | `cka/priorityclass-preemption`       | workloads-scheduling | 1     | 10m  |
 | `cka/quota-limitrange`               | workloads-scheduling | 1     | 10m  |
