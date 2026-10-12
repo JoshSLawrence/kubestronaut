@@ -731,14 +731,20 @@ func TestShellChecksStopAtTheFirstFailure(t *testing.T) {
 	cases := []struct {
 		name, script string
 		wantOK       bool
+		// needsPipefail marks a case that only fails in a shell with pipefail.
+		needsPipefail bool
 	}{
-		{"all pass", "true\ntrue\necho ok", true},
-		{"failing middle line", "true\nfalse\necho ok", false},
-		{"failing grep mid-script", "echo a | grep -q zzz\necho ok", false},
-		{"failure inside a pipeline", "false | cat\necho ok", false},
-		{"tested failure is fine", "if ! false; then echo fine; fi\n! false\ntrue", true},
-		{"unset variable is allowed", "echo \"$KS_UNSET_VAR\"\ntrue", true},
+		{"all pass", "true\ntrue\necho ok", true, false},
+		{"failing middle line", "true\nfalse\necho ok", false, false},
+		{"failing grep mid-script", "echo a | grep -q zzz\necho ok", false, false},
+		{"failure inside a pipeline", "false | cat\necho ok", false, true},
+		{"tested failure is fine", "if ! false; then echo fine; fi\n! false\ntrue", true, false},
+		{"unset variable is allowed", "echo \"$KS_UNSET_VAR\"\ntrue", true, false},
 	}
+	// The pods' wrapper enables pipefail only where sh has it. dash before
+	// 0.5.12 (and so some CI images) does not, and a failing pipeline stage
+	// then goes unnoticed by design.
+	shHasPipefail := exec.Command("sh", "-c", "(set -o pipefail)").Run() == nil
 	for _, c := range cases {
 		t.Setenv("KS_TEST_SCRIPT", c.script)
 		// The same wrappers shellArgv builds, with the script from the
@@ -746,7 +752,11 @@ func TestShellChecksStopAtTheFirstFailure(t *testing.T) {
 		node := exec.Command("bash", "-eo", "pipefail", "-c", `eval "$KS_TEST_SCRIPT"`).Run()
 		pod := exec.Command("sh", "-c", podShellPrelude, "sh", `eval "$KS_TEST_SCRIPT"`).Run()
 		for name, err := range map[string]error{"node": node, "pod": pod} {
-			if ok := err == nil; ok != c.wantOK {
+			want := c.wantOK
+			if name == "pod" && c.needsPipefail && !shHasPipefail {
+				want = true
+			}
+			if ok := err == nil; ok != want {
 				t.Errorf("%s %s: passed=%v, want %v (err %v)", name, c.name, ok, c.wantOK, err)
 			}
 		}
