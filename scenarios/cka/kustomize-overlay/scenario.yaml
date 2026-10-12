@@ -19,8 +19,8 @@ spec:
   hints:
     - "`kubectl kustomize <dir>` prints what a directory builds, without
       applying it. Check it before you apply."
-    - Labels that are added to selectors cannot be changed on a deployment
-      later, and break its Service.
+    - A deployment's selector cannot be changed once it exists, so labels that
+      end up in selectors can only be applied to a fresh install.
   setup:
     - script: setup/base.sh
   checks:
@@ -46,7 +46,7 @@ spec:
       node: controlplane
       shell: |
         out=$(kubectl kustomize /opt/kustomize/metrics-server/overlays/lab)
-        grep -Eq -- '^[[:space:]]*- --kubelet-insecure-tls[[:space:]]*$' <<<"$out"
+        grep -Eq -- '^[[:space:]]*- --kubelet-insecure-tls(=true)?[[:space:]]*$' <<<"$out"
     - id: installed-labels
       description: every metrics-server object in the cluster carries the label
       weight: 2

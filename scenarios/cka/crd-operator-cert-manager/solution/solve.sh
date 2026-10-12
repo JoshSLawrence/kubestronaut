@@ -3,7 +3,6 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source "$KS_LIB"
 
-# Server-side apply: the CRDs are too large for the last-applied annotation.
 kubectl apply --server-side -f - < <(ks_node controlplane cat /opt/operators/cert-manager.yaml)
 kubectl -n cert-manager patch deployment cert-manager --type json -p \
   '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--enable-certificate-owner-ref"}]'

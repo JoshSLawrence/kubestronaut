@@ -1,7 +1,7 @@
 # Solution
 
-Apply the manifest from the node. It is large, so use server-side apply or
-`kubectl create`:
+Apply the manifest from the node. A plain `kubectl apply -f`, `kubectl create
+-f` and `--server-side` all work:
 
 ```bash
 kubestronaut ssh controlplane

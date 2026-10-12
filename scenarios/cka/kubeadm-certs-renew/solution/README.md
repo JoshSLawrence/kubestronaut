@@ -11,8 +11,8 @@ kubeadm certs renew apiserver
 kubeadm certs renew apiserver-kubelet-client
 ```
 
-Renewing only rewrites the files. The API server loads its certificates when
-it starts, so restart the static pod: move its manifest out of
+Renewing only rewrites the files; the task asks for a restart so that the
+running server loads them. Restart the static pod: move its manifest out of
 `/etc/kubernetes/manifests` and back, or stop its container with `crictl`:
 
 ```bash

@@ -19,10 +19,8 @@ case "${1:?which certificate}" in
     # kubelet.conf is left out: the kubelet rotates its own certificate.
     ks_node controlplane sh <<'SH'
 cd /etc/kubernetes
-for f in $(find pki -name "*.crt" | sort); do
-  case "$f" in
-    pki/apiserver.crt | pki/apiserver-kubelet-client.crt) continue ;;
-  esac
+for f in pki/ca.crt pki/front-proxy-ca.crt pki/front-proxy-client.crt pki/apiserver-etcd-client.crt \
+  pki/etcd/ca.crt pki/etcd/server.crt pki/etcd/peer.crt pki/etcd/healthcheck-client.crt; do
   cat "$f"
 done | sha256sum
 cat admin.conf controller-manager.conf scheduler.conf super-admin.conf | sha256sum

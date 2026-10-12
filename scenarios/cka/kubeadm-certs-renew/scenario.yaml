@@ -14,8 +14,9 @@ spec:
   prompt: prompt.md
   hints:
     - "`kubeadm certs --help` lists what can be checked and renewed."
-    - The API server reads its certificates once, when it starts. Static pods
-      are restarted by changing their manifest or stopping the container.
+    - Renewing rewrites the certificate files. A static pod is restarted by
+      moving its manifest out of the manifests directory and back, or by
+      stopping its container with `crictl`.
   setup:
     - script: setup/record.sh
   checks:

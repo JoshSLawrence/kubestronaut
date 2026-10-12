@@ -32,35 +32,36 @@ spec:
       command: [kubectl, get, --raw, /readyz]
       stdoutContains: ok
       retry: {attempts: 15, interval: 4s}
-    - id: etcd-endpoint
-      description: the API server is configured to talk to etcd's client port
-      weight: 2
-      type: nodeExec
-      node: controlplane
-      shell: |
-        grep -Eq -- '^[[:space:]]*- --etcd-servers=https://[^[:space:],]+:2379([[:space:]]*|,.*)$' /etc/kubernetes/manifests/kube-apiserver.yaml
-    - id: key-matches-cert
-      description: the serving key configured for the API server exists and belongs to its certificate
-      weight: 2
+    - id: definition-sound
+      description: the API server's static pod definition is sound
+      weight: 4
       type: nodeExec
       node: controlplane
       shell: |
         m=/etc/kubernetes/manifests/kube-apiserver.yaml
-        flag() { sed -n "s/^[[:space:]]*- --$1=\(.*\)$/\1/p" "$m" | head -n 1; }
+        # Each flag is read from the manifest, whatever other arguments surround it.
+        flag() { sed -n "s/^[[:space:]]*- --$1=\(.*\)$/\1/{p;q;}" "$m"; }
+        etcd=$(flag etcd-servers)
+        case "$etcd" in
+          https://*:2379 | https://*:2379,*) ;;
+          *) exit 1 ;;
+        esac
         cert=$(flag tls-cert-file)
         key=$(flag tls-private-key-file)
-        test -f "$cert" && test -f "$key"
+        test -f "$cert"
+        test -f "$key"
         test "$(openssl x509 -in "$cert" -noout -pubkey)" = "$(openssl pkey -in "$key" -pubout)"
     - id: served-cert
       description: the certificate presented on port 6443 is valid for kubernetes.default.svc
       type: nodeExec
       node: controlplane
       shell: |
-        openssl s_client -connect 127.0.0.1:6443 </dev/null 2>/dev/null |
-          openssl x509 -noout -ext subjectAltName | grep -q 'DNS:kubernetes.default.svc'
+        # Captured first: grep -q closing the pipe early would fail it under pipefail.
+        sans=$(openssl s_client -connect 127.0.0.1:6443 </dev/null 2>/dev/null | openssl x509 -noout -ext subjectAltName)
+        grep -q 'DNS:kubernetes.default.svc' <<<"$sans"
       retry: {attempts: 6, interval: 4s}
     - id: secure-flags-kept
-      description: authorization, client certificate authentication and anonymous access are still locked down
+      description: the API server's authorization and authentication settings are intact
       weight: 2
       type: nodeExec
       node: controlplane
@@ -68,7 +69,7 @@ spec:
         m=/etc/kubernetes/manifests/kube-apiserver.yaml
         grep -Eq -- '^[[:space:]]*- --authorization-mode=Node,RBAC[[:space:]]*$' "$m"
         grep -Eq -- '^[[:space:]]*- --client-ca-file=/etc/kubernetes/pki/ca.crt[[:space:]]*$' "$m"
-        ! grep -Eq -- '--anonymous-auth=true|AlwaysAllow' "$m"
+        ! grep -Eq -- '--anonymous-auth([[:space:]]*$|=true)|AlwaysAllow' "$m"
     - id: nodes-ready
       description: every node is Ready
       type: nodeExec

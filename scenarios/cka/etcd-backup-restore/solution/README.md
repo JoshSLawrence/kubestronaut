@@ -33,3 +33,8 @@ The snapshot has to be taken before the restore: once etcd runs on the
 restored data, the objects created since `golden.db` are gone and a snapshot
 no longer holds them. Restoring into `/var/lib/etcd` fails because that
 directory is not empty.
+
+If the API server shows stale data after the restore (its watch cache can be
+ahead of etcd), restart it, or restore with `--bump-revision` and
+`--mark-compacted`, which make etcd's revision jump past anything the API
+server has seen.

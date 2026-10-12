@@ -76,7 +76,14 @@ for _ in $(seq 90); do
   hog=$(kubectl top pod memory-hog -n metrics --no-headers 2>/dev/null | awk '{print $3}' || true)
   hog=${hog%Mi}
   case "$hog" in '' | *[!0-9]*) hog=0 ;; esac
-  if [ "$top" = "$busy" ] && [ "$nodes" -ge 2 ] && [ "$hog" -ge 800 ]; then
+  # node01 must lead the memory ranking by a clear margin, or the answer
+  # would depend on noise.
+  worker=$(kubectl top node "$(ks_node_name node01)" --no-headers 2>/dev/null | awk '{print $4}' || true)
+  cp=$(kubectl top node "$(ks_node_name controlplane)" --no-headers 2>/dev/null | awk '{print $4}' || true)
+  worker=${worker%Mi}
+  cp=${cp%Mi}
+  case "$worker$cp" in '' | *[!0-9]*) worker=0 cp=0 ;; esac
+  if [ "$top" = "$busy" ] && [ "$nodes" -ge 2 ] && [ "$hog" -ge 800 ] && [ "$worker" -ge $((cp + 200)) ]; then
     exit 0
   fi
   sleep 4

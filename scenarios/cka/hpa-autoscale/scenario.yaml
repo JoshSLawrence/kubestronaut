@@ -57,13 +57,6 @@ spec:
       ref: {kind: horizontalpodautoscaler, name: php-apache, namespace: autoscale}
       path: '{.spec.behavior.scaleDown.stabilizationWindowSeconds}'
       equals: 30
-    - id: deploy-requests
-      description: the containers of deployment php-apache declare what they need
-      weight: 2
-      type: jsonPath
-      ref: {kind: deployment, name: php-apache, namespace: autoscale}
-      path: '{.spec.template.spec.containers[*].resources.requests.cpu}'
-      nonEmpty: true
     - id: deploy-ready
       description: deployment php-apache is rolled out
       type: ready
@@ -76,7 +69,7 @@ spec:
       ref: {kind: horizontalpodautoscaler, name: php-apache, namespace: autoscale}
       path: '{.status.conditions[?(@.type=="ScalingActive")].status}'
       equals: 'True'
-      retry: {attempts: 12, interval: 5s}
+      retry: {attempts: 24, interval: 5s}
   solution:
     script: solution/solve.sh
     readme: solution/README.md

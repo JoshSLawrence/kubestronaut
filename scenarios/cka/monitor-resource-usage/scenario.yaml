@@ -34,6 +34,7 @@ spec:
       weight: 3
       type: script
       path: checks/top-node.sh
+      retry: {attempts: 5, interval: 5s}
   solution:
     script: solution/solve.sh
     readme: solution/README.md

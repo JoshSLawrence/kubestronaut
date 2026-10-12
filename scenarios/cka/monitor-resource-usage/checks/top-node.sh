@@ -9,7 +9,11 @@ if [ -z "$got" ]; then
   exit 1
 fi
 # Judged against the metrics as they are now, not a fixed answer.
-want=$(kubectl top nodes --no-headers --sort-by=memory | head -n 1 | awk '{print $1}')
+top=$(kubectl top nodes --no-headers --sort-by=memory 2>/dev/null) || {
+  echo "kubectl top nodes failed: metrics are not available yet" >&2
+  exit 1
+}
+want=$(awk 'NR == 1 {print $1}' <<<"$top")
 if [ "$got" != "$want" ]; then
   echo "/root/top-node.txt does not name the node using the most memory" >&2
   exit 1

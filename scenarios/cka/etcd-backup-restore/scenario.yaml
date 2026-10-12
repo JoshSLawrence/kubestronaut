@@ -22,6 +22,21 @@ spec:
     - script: setup/record.sh
       timeout: 5m
   checks:
+    - id: etcd-ready
+      description: the etcd pod is ready
+      type: ready
+      ref: {kind: pod, namespace: kube-system, selector: component=etcd}
+      retry: {attempts: 20, interval: 6s}
+    - id: apiserver-ready
+      description: the kube-apiserver pod is ready
+      type: ready
+      ref: {kind: pod, namespace: kube-system, selector: component=kube-apiserver}
+      retry: {attempts: 20, interval: 6s}
+    - id: node-ready
+      description: the node controlplane is Ready
+      type: ready
+      ref: {kind: node, name: '{{node "controlplane"}}'}
+      retry: {attempts: 20, interval: 6s}
     - id: now-snapshot-valid
       description: /opt/backup/now.db is a readable etcd snapshot
       type: nodeExec
@@ -47,10 +62,10 @@ spec:
       type: nodeExec
       node: controlplane
       # Read the manifest the kubelet runs, not the mirror pod, which can lag
-      # behind it for a while. The data directory flag, the mount that backs
+      # behind it for a while. --local needs no API server. The data directory flag, the mount that backs
       # it and the host path must agree, whichever of them the learner edited.
       shell: |
-        kubectl create --dry-run=client -f /etc/kubernetes/manifests/etcd.yaml -o json | jq -e '
+        kubectl annotate --local -f /etc/kubernetes/manifests/etcd.yaml ks=1 -o json | jq -e '
           [.spec | . as $s | .containers[0] as $c
             | $s.volumes[] | select(.hostPath.path == "/var/lib/etcd-golden") | .name as $vol
             | $c.volumeMounts[] | select(.name == $vol) | .mountPath as $mnt
@@ -69,21 +84,6 @@ spec:
       ref: {kind: configmap, name: post-snapshot, namespace: vault}
       absent: true
       retry: {attempts: 5, interval: 3s}
-    - id: etcd-ready
-      description: the etcd pod is ready
-      type: ready
-      ref: {kind: pod, namespace: kube-system, selector: component=etcd}
-      retry: {attempts: 20, interval: 6s}
-    - id: apiserver-ready
-      description: the kube-apiserver pod is ready
-      type: ready
-      ref: {kind: pod, namespace: kube-system, selector: component=kube-apiserver}
-      retry: {attempts: 20, interval: 6s}
-    - id: node-ready
-      description: the node controlplane is Ready
-      type: ready
-      ref: {kind: node, name: '{{node "controlplane"}}'}
-      retry: {attempts: 20, interval: 6s}
   solution:
     script: solution/solve.sh
     readme: solution/README.md

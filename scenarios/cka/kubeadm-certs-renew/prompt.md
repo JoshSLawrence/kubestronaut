@@ -4,4 +4,4 @@ On `controlplane`:
    by kubeadm to `/root/cert-expiry.txt`.
 2. Renew the API server's serving certificate and the API server's client
    certificate for the kubelet. Do not renew any other certificate.
-3. Make sure the running API server uses the renewed certificates.
+3. Restart the API server so that it loads the renewed certificates.
