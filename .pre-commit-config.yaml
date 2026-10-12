@@ -5,7 +5,7 @@ repos:
       # Vendored files must stay byte for byte as upstream published them: their
       # sha256 is pinned in scenarios/cka/vendor.lock.
       - id: trailing-whitespace
-        exclude: ^scenarios/cka/(hpa-autoscale|monitor-resource-usage)/files/metrics-server\.yaml$|^scenarios/cka/kustomize-overlay/files/base/components\.yaml$|^scenarios/cka/crd-operator-cert-manager/files/cert-manager\.yaml$
+        exclude: ^scenarios/cka/(hpa-autoscale|monitor-resource-usage)/files/metrics-server\.yaml$|^scenarios/cka/kustomize-overlay/files/base/components\.yaml$|^scenarios/cka/crd-operator-cert-manager/files/cert-manager\.yaml$|^scenarios/cka/(ingress-traefik|gateway-httproute|gateway-migrate-ingress-tls)/files/traefik\.yaml$
       - id: end-of-file-fixer
         exclude: ^scenarios/cka/(hpa-autoscale|monitor-resource-usage)/files/metrics-server\.yaml$|^scenarios/cka/kustomize-overlay/files/base/components\.yaml$|^scenarios/cka/crd-operator-cert-manager/files/cert-manager\.yaml$
       # A chart's templates contain template syntax and are not valid YAML.
@@ -14,7 +14,7 @@ repos:
         exclude: ^scenarios/.+/files/charts/[^/]+/templates/
       # The cert-manager manifest is about 1 MB; the default limit is 500 KB.
       - id: check-added-large-files
-        exclude: ^scenarios/cka/crd-operator-cert-manager/files/cert-manager\.yaml$
+        exclude: ^scenarios/cka/(cni-install-calico/files/calico|crd-operator-cert-manager/files/cert-manager|gateway-httproute/files/gateway-api|gateway-migrate-ingress-tls/files/gateway-api)\.yaml$
   - repo: local
     hooks:
       # Calling mise keeps hook tool versions identical to CI.
