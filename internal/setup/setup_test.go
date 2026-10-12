@@ -245,3 +245,79 @@ func TestWaitStepHonoursWaitTimeout(t *testing.T) {
 		t.Fatalf("wait.timeout ignored: err=%v after %s", err, time.Since(start))
 	}
 }
+
+// bashLib runs script with the helper library sourced. ks_node is replaced by
+// a stand-in that runs the command locally, so node helpers work offline.
+func bashLib(t *testing.T, scenarioDir, script string) (string, string, error) {
+	t.Helper()
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+	lib, err := WriteLib(filepath.Join(t.TempDir(), "sess"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", "-c", `source "$KS_LIB"; ks_node() { shift; "$@"; }; eval "$KS_TEST_SCRIPT"`)
+	cmd.Env = append(os.Environ(), "KS_LIB="+lib, "KS_SCENARIO_DIR="+scenarioDir, "KS_TEST_SCRIPT="+script)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	err = cmd.Run()
+	return out.String(), errb.String(), err
+}
+
+func TestKsCopyTo(t *testing.T) {
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "sub", "a.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "new", "dir")
+	script := "ks_copy_to node01 '" + src + "' '" + dest + "'\ncat '" + dest + "/sub/a.txt'"
+	out, errs, err := bashLib(t, t.TempDir(), script)
+	if err != nil || out != "hello" {
+		t.Fatalf("copy: out=%q err=%v stderr=%s", out, err, errs)
+	}
+	_, errs, err = bashLib(t, t.TempDir(), "ks_copy_to node01 /does/not/exist /x")
+	if err == nil || !strings.Contains(errs, "not a directory") {
+		t.Fatalf("missing source: err=%v stderr=%q", err, errs)
+	}
+}
+
+func TestKsAnswers(t *testing.T) {
+	sd := t.TempDir()
+	if _, errs, err := bashLib(t, sd, `ks_answer_put token s3cret`); err != nil {
+		t.Fatalf("put: %v %s", err, errs)
+	}
+	info, err := os.Stat(filepath.Join(sd, ".answers", "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("answer mode %v, want 0600", info.Mode().Perm())
+	}
+	raw, _ := os.ReadFile(filepath.Clean(filepath.Join(sd, ".answers", "token")))
+	if strings.Contains(string(raw), "s3cret") || len(strings.TrimSpace(string(raw))) != 64 {
+		t.Fatalf("answer must be a sha256, got %q", raw)
+	}
+	for script, wantOK := range map[string]bool{
+		`ks_answer_check token s3cret`:                                 true,
+		`ks_answer_check token s3cret2`:                                false,
+		`ks_answer_check token ''`:                                     false,
+		`ks_answer_check nokey s3cret`:                                 false,
+		`ks_answer_check ../token s3cret`:                              false,
+		`ks_answer_put '../escape' x`:                                  false,
+		`ks_answer_put '.hidden' x`:                                    false,
+		`ks_answer_put '' x`:                                           false,
+		`ks_answer_put multi $'a\nb' && ks_answer_check multi $'a\nb'`: true,
+	} {
+		_, errs, err := bashLib(t, sd, script)
+		if (err == nil) != wantOK {
+			t.Errorf("%s: err=%v stderr=%q, want ok=%v", script, err, errs, wantOK)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(sd), "escape")); err == nil {
+		t.Fatal("a key must not escape the answers directory")
+	}
+}
