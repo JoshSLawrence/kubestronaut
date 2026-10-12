@@ -39,7 +39,7 @@ spec:
     - script: setup/record.sh
   checks:
     - id: node01-cordoned
-      description: node01 accepts no new pods
+      description: node01 is cordoned
       type: jsonPath
       ref: {kind: node, name: '{{node "node01"}}'}
       path: '{.spec.unschedulable}'
@@ -47,9 +47,8 @@ spec:
     - id: no-maint-pods
       description: no pod in maint except the DaemonSet's runs on node01
       weight: 3
-      type: count
-      ref: {kind: pod, namespace: maint, selector: app!=node-agent, fieldSelector: 'spec.nodeName={{node "node01"}}'}
-      eq: 0
+      type: script
+      path: checks/pods-left.sh
       retry: {attempts: 10, interval: 3s}
     - id: daemonset-ready
       description: DaemonSet maint/node-agent is rolled out
