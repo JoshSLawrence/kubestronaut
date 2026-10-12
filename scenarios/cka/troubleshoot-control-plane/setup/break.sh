@@ -25,10 +25,12 @@ for _ in $(seq 90); do
   sched=$(kubectl -n kube-system get pods -l component=kube-scheduler \
     -o 'jsonpath={.items[*].metadata.name}')
   restarts=$(kubectl -n kube-system get pods -l component=kube-controller-manager \
-    -o 'jsonpath={.items[0].status.containerStatuses[0].restartCount}')
+    -o 'jsonpath={.items[*].status.containerStatuses[0].restartCount}')
   ready=$(kubectl -n kube-system get pods -l component=kube-controller-manager \
-    -o 'jsonpath={.items[0].status.conditions[?(@.type=="Ready")].status}')
-  if [ -z "$sched" ] && [ "${restarts:-0}" -ge 1 ] && [ "$ready" != "True" ]; then
+    -o 'jsonpath={.items[*].status.conditions[?(@.type=="Ready")].status}')
+  # No controller manager pod for a moment (the kubelet is recreating it)
+  # leaves both values empty: keep waiting.
+  if [ -n "$restarts" ] && [ -z "$sched" ] && [ "$restarts" -ge 1 ] && [ "$ready" != "True" ]; then
     exit 0
   fi
   sleep 2
