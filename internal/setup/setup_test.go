@@ -1,12 +1,15 @@
 package setup
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -250,6 +253,11 @@ func TestWaitStepHonoursWaitTimeout(t *testing.T) {
 // a stand-in that runs the command locally, so node helpers work offline.
 func bashLib(t *testing.T, scenarioDir, script string) (string, string, error) {
 	t.Helper()
+	return bashLibEnv(t, scenarioDir, script)
+}
+
+func bashLibEnv(t *testing.T, scenarioDir, script string, extra ...string) (string, string, error) {
+	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not available")
 	}
@@ -259,6 +267,7 @@ func bashLib(t *testing.T, scenarioDir, script string) (string, string, error) {
 	}
 	cmd := exec.Command("bash", "-c", `source "$KS_LIB"; ks_node() { shift; "$@"; }; eval "$KS_TEST_SCRIPT"`)
 	cmd.Env = append(os.Environ(), "KS_LIB="+lib, "KS_SCENARIO_DIR="+scenarioDir, "KS_TEST_SCRIPT="+script)
+	cmd.Env = append(cmd.Env, extra...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err = cmd.Run()
@@ -270,17 +279,60 @@ func TestKsCopyTo(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(src, "sub"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(src, "sub", "a.txt"), []byte("hello"), 0o600); err != nil {
+	file := filepath.Join(src, "sub", "a.txt")
+	if err := os.WriteFile(file, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	dest := filepath.Join(t.TempDir(), "new", "dir")
-	script := "ks_copy_to node01 '" + src + "' '" + dest + "'\ncat '" + dest + "/sub/a.txt'"
-	out, errs, err := bashLib(t, t.TempDir(), script)
+	if runtime.GOOS == "darwin" {
+		// An extended attribute makes macOS tar emit a "._a.txt" entry.
+		if _, errs, err := bashLib(t, t.TempDir(), "xattr -w com.example.test x '"+file+"'"); err != nil {
+			t.Skipf("cannot set an extended attribute: %v %s", err, errs)
+		}
+	}
+	base := t.TempDir()
+	dest := filepath.Join(base, "new", "dir")
+	stream := filepath.Join(base, "stream.tar")
+	// The stand-in node records the archive it is sent and unpacks it with the
+	// same flags the real node gets.
+	script := `ks_node() { shift; if [ "$1" = tar ]; then tee "$KS_TEST_STREAM" | "$@"; else "$@"; fi; }
+ks_copy_to node01 '` + src + `' '` + dest + `'
+cat '` + dest + `/sub/a.txt'`
+	out, errs, err := bashLibEnv(t, t.TempDir(), script, "KS_TEST_STREAM="+stream)
 	if err != nil || out != "hello" {
 		t.Fatalf("copy: out=%q err=%v stderr=%s", out, err, errs)
 	}
-	_, errs, err = bashLib(t, t.TempDir(), "ks_copy_to node01 /does/not/exist /x")
-	if err == nil || !strings.Contains(errs, "not a directory") {
+	f, err := os.Open(filepath.Clean(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	var names []string
+	for tr := tar.NewReader(f); ; {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, h.Name)
+	}
+	listing := strings.Join(names, "\n")
+	if strings.Contains(listing, "._") {
+		t.Fatalf("the archive carries AppleDouble entries:\n%s", listing)
+	}
+	if !strings.Contains(listing, "sub/a.txt") {
+		t.Fatalf("the archive lacks the file:\n%s", listing)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The source directory is 0700; the destination must not inherit that.
+	if info.Mode().Perm()&0o055 != 0o055 {
+		t.Fatalf("destination mode %v, want world readable", info.Mode().Perm())
+	}
+	if _, errs, err = bashLib(t, t.TempDir(), "ks_copy_to node01 /does/not/exist /x"); err == nil || !strings.Contains(errs, "not a directory") {
 		t.Fatalf("missing source: err=%v stderr=%q", err, errs)
 	}
 }

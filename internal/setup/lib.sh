@@ -60,7 +60,12 @@ ks_copy_to() {
     return 1
   fi
   ks_node "$alias" mkdir -p "$dest"
-  tar -C "$src" -cf - . | ks_node "$alias" tar -xf - -C "$dest"
+  # macOS tar adds AppleDouble "._" entries for extended attributes unless
+  # both of these are set, and "kubectl apply -f dir/" chokes on them. On the
+  # node, take ownership and permissions from the node's defaults instead of
+  # the host's uid and mode.
+  COPYFILE_DISABLE=1 tar --no-xattrs -C "$src" -cf - . |
+    ks_node "$alias" tar --no-same-owner --no-same-permissions -xf - -C "$dest"
 }
 
 # _ks_sha256: print the sha256 of stdin. macOS has no sha256sum.
@@ -75,6 +80,8 @@ _ks_sha256() {
 # _ks_answer_file <key>: print the path of an answer file, or fail on a key
 # that could escape the answers directory.
 _ks_answer_file() {
+  # ASCII only: in other locales a range like a-z can match more characters.
+  local LC_ALL=C
   case "$1" in
     '' | *[!A-Za-z0-9._-]* | .*)
       ks_log "answer key must be letters, digits, '.', '_' or '-', got '$1'"
@@ -98,11 +105,14 @@ ks_answer_put() {
 }
 
 # ks_answer_check <key> <value>: succeed when the value hashes to the stored
-# answer. Prints nothing; callers write their own message.
+# answer. Callers write their own message; only a missing answer is logged.
 ks_answer_check() {
   local file want got
   file=$(_ks_answer_file "$1") || return 1
-  [ -f "$file" ] || return 1
+  if [ ! -f "$file" ]; then
+    ks_log "no recorded answer for '$1': setup did not run ks_answer_put"
+    return 1
+  fi
   want=$(cat "$file")
   got=$(printf '%s' "$2" | _ks_sha256)
   [ "$want" = "$got" ]
