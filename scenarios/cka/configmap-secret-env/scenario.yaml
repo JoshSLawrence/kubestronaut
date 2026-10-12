@@ -1,0 +1,95 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: configmap-secret-env
+  title: Configure an app with a ConfigMap and a Secret
+  domain: workloads-scheduling
+  difficulty: easy
+  tags: [configmap, secret, deployment]
+spec:
+  timeLimit: 10m
+  weight: 5
+  context: k8s-config
+  namespaces: [config]
+  exclusive: false
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - On the control plane, kubectl already points at the cluster.
+    - "`kubectl create configmap --dry-run=client -o yaml` prints a manifest
+      you can add fields to."
+    - Environment variables from a Secret use `valueFrom.secretKeyRef`.
+  setup:
+    - script: setup/write-config.sh
+    - manifest: setup/api.yaml
+    - wait:
+        ref: {kind: deployment, name: api, namespace: config}
+        for: condition=Available
+  checks:
+    - id: cm-immutable
+      description: ConfigMap config/app-config exists and cannot be changed
+      type: jsonPath
+      ref: {kind: configmap, name: app-config, namespace: config}
+      path: '{.immutable}'
+      equals: 'true'
+    - id: cm-content
+      description: the ConfigMap holds the file under the right key
+      weight: 2
+      type: script
+      path: checks/configmap-matches-file.sh
+    - id: secret-username
+      description: Secret config/db-creds holds the username
+      type: jsonPath
+      ref: {kind: secret, name: db-creds, namespace: config}
+      path: '{.data.username}'
+      equals: YXBw
+    - id: secret-password
+      description: Secret config/db-creds holds the password
+      type: jsonPath
+      ref: {kind: secret, name: db-creds, namespace: config}
+      path: '{.data.password}'
+      equals: UzNjdXJlIXBhc3M=
+    - id: env-user-from-secret
+      description: DB_USER is read from the Secret rather than set inline
+      type: jsonPath
+      ref: {kind: deployment, name: api, namespace: config}
+      path: '{.spec.template.spec.containers[0].env[?(@.name=="DB_USER")].valueFrom.secretKeyRef.name}/{.spec.template.spec.containers[0].env[?(@.name=="DB_USER")].valueFrom.secretKeyRef.key}'
+      equals: db-creds/username
+    - id: env-password-from-secret
+      description: DB_PASSWORD is read from the Secret rather than set inline
+      type: jsonPath
+      ref: {kind: deployment, name: api, namespace: config}
+      path: '{.spec.template.spec.containers[0].env[?(@.name=="DB_PASSWORD")].valueFrom.secretKeyRef.name}/{.spec.template.spec.containers[0].env[?(@.name=="DB_PASSWORD")].valueFrom.secretKeyRef.key}'
+      equals: db-creds/password
+    - id: env-live
+      description: a running api pod sees both variables
+      weight: 2
+      type: podExec
+      ref: {kind: pod, namespace: config, selector: app=api}
+      shell: 'echo "$DB_USER:$DB_PASSWORD"'
+      stdoutMatches: '^app:S3cure!pass\s*$'
+      retry: {attempts: 8, interval: 4s}
+    - id: mount-live
+      description: a running api pod has the file with the right content
+      weight: 2
+      type: script
+      path: checks/pod-file-matches.sh
+      retry: {attempts: 8, interval: 4s}
+    - id: mount-readonly
+      description: the file is mounted read-only
+      type: jsonPath
+      ref: {kind: deployment, name: api, namespace: config}
+      path: '{.spec.template.spec.containers[0].volumeMounts[?(@.mountPath=="/etc/app/app.properties")].readOnly}{.spec.template.spec.containers[0].volumeMounts[?(@.mountPath=="/etc/app")].readOnly}'
+      equals: 'true'
+    - id: api-ready
+      description: deployment config/api is fully rolled out
+      type: ready
+      ref: {kind: deployment, name: api, namespace: config}
+      retry: {attempts: 8, interval: 4s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [api-ready]
+    timeout: 10m
