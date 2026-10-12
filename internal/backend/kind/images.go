@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/JoshSLawrence/kubestronaut/internal/backend"
 )
 
 // DefaultVersion is used when a scenario names no Kubernetes version.
-const DefaultVersion = "v1.36.4"
+const DefaultVersion = backend.DefaultKubernetesVersion
 
 // nodeImages pins each supported Kubernetes version to the node image digest
 // published in the kind v0.33.0 release notes. Digests keep clusters

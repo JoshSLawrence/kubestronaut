@@ -2,31 +2,20 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/spf13/cobra"
+	"github.com/JoshSLawrence/kubestronaut/internal/cli"
 )
 
+// version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
 func main() {
-	root := &cobra.Command{
-		Use:           "kubestronaut",
-		Short:         "Kubernetes certification lab scenarios on kind",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
-	root.AddCommand(&cobra.Command{
-		Use:   "version",
-		Short: "Print the version",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), version)
-			return err
-		},
-	})
-	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	code := cli.Execute(ctx, &cli.App{Version: version}, os.Args[1:], os.Stdout, os.Stderr, os.Stdin)
+	stop()
+	os.Exit(code)
 }

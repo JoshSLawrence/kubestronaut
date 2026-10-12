@@ -51,6 +51,10 @@ type Backend interface {
 	LoadImages(ctx context.Context, cluster string, images []string) error
 }
 
+// DefaultKubernetesVersion is used when neither the scenario nor the user
+// names a version.
+const DefaultKubernetesVersion = "v1.36.4"
+
 // ControlPlaneAlias is the alias of the single control-plane node.
 const ControlPlaneAlias = "controlplane"
 

@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -54,6 +56,13 @@ func (f *Fake) Create(_ context.Context, s backend.ClusterSpec) error {
 	}
 	f.Created = append(f.Created, s)
 	f.Clusters[s.Name] = Nodes(s.Name, s.Workers)
+	if s.Kubeconfig != "" {
+		// Like kind, leave an admin kubeconfig behind.
+		if err := os.MkdirAll(filepath.Dir(s.Kubeconfig), 0o700); err != nil {
+			return err
+		}
+		return os.WriteFile(s.Kubeconfig, []byte("admin of "+s.Name), 0o600)
+	}
 	return nil
 }
 
