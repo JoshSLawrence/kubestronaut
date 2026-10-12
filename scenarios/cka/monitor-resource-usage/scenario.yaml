@@ -1,0 +1,41 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: monitor-resource-usage
+  title: Find the heaviest pod and node
+  domain: troubleshooting
+  difficulty: easy
+  tags: [metrics-server, top, monitoring]
+spec:
+  timeLimit: 8m
+  weight: 4
+  context: k8s-top
+  namespaces: [metrics]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - busybox:1.38.0
+    - registry.k8s.io/metrics-server/metrics-server:v0.9.0
+  prompt: prompt.md
+  hints:
+    - "`kubectl top` can filter by label and sort its output."
+  setup:
+    - script: setup/workloads.sh
+      timeout: 8m
+  checks:
+    - id: top-pod
+      description: /root/top-pod.txt names the app=batch pod that uses the most CPU
+      weight: 3
+      type: script
+      path: checks/top-pod.sh
+    - id: top-node
+      description: /root/top-node.txt names the node that uses the most memory
+      weight: 3
+      type: script
+      path: checks/top-node.sh
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    timeout: 15m
