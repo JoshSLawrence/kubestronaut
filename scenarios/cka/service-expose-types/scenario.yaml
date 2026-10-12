@@ -1,0 +1,128 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: service-expose-types
+  title: Expose a Deployment as ClusterIP, NodePort and LoadBalancer
+  domain: services-networking
+  difficulty: medium
+  tags: [services, nodeport, loadbalancer, metallb]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-svc
+  namespaces: [catalog]
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+    - quay.io/metallb/controller:v0.16.0
+    - quay.io/metallb/speaker:v0.16.0
+  prompt: prompt.md
+  hints:
+    - "`kubectl expose --help` creates a Service from a Deployment, but not
+      every field can be set with a flag."
+    - "`kubectl get pods --show-labels` shows what a selector may match, and
+      `kubectl get endpointslices` shows what a Service really sends to."
+  setup:
+    - script: setup/metallb.sh
+      timeout: 6m
+    - manifest: setup/catalog.yaml
+    - wait:
+        ref: {kind: deployment, name: catalog, namespace: catalog}
+        for: condition=Available
+    - wait:
+        ref: {kind: pod, name: canary, namespace: catalog}
+        for: condition=Ready
+    - wait:
+        ref: {kind: pod, name: client, namespace: catalog}
+        for: condition=Ready
+  checks:
+    - id: clusterip-service
+      description: Service catalog is a ClusterIP Service on port 80 that targets the named container port
+      type: jsonPath
+      ref: {kind: service, name: catalog, namespace: catalog}
+      path: '{.spec.type}/{.spec.ports[*].port}/{.spec.ports[*].targetPort}'
+      equals: ClusterIP/80/http
+    - id: clusterip-backends
+      description: Service catalog sends to exactly the 2 catalog pods
+      weight: 2
+      type: script
+      path: checks/backends.sh
+      args: [catalog]
+      retry: {attempts: 3, interval: 3s}
+    - id: clusterip-reach
+      description: a pod reaches Service catalog on port 80 by name
+      type: connectivity
+      from: {kind: pod, name: client, namespace: catalog}
+      to: catalog.catalog.svc.cluster.local:80
+      expect: allowed
+      retry: {attempts: 3, interval: 3s}
+    - id: nodeport-service
+      description: Service catalog-np is a NodePort Service on port 80 with node port 30080
+      type: jsonPath
+      ref: {kind: service, name: catalog-np, namespace: catalog}
+      path: '{.spec.type}/{.spec.ports[*].port}/{.spec.ports[*].nodePort}'
+      equals: NodePort/80/30080
+    - id: nodeport-backends
+      description: Service catalog-np sends to exactly the 2 catalog pods
+      weight: 2
+      type: script
+      path: checks/backends.sh
+      args: [catalog-np]
+      retry: {attempts: 3, interval: 3s}
+    - id: nodeport-reach
+      description: port 30080 on every node answers with the catalog pods only
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 30s
+      retry: {attempts: 4, interval: 3s}
+      shell: |
+        for node in $(kubectl get nodes -o 'jsonpath={.items[*].metadata.name}'); do
+          ips=$(kubectl get node "$node" -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+          ip=${ips%% *}
+          for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            body=$(curl -s --max-time 3 "http://$ip:30080/hostname" || true)
+            if ! [[ $body =~ ^catalog-[a-z0-9]+-[a-z0-9]+$ ]]; then
+              echo "$ip:30080 answered '$body'" >&2
+              exit 1
+            fi
+          done
+        done
+    - id: loadbalancer-service
+      description: Service catalog-lb is a LoadBalancer Service on port 80 that has an external IP
+      type: jsonPath
+      ref: {kind: service, name: catalog-lb, namespace: catalog}
+      path: '{.spec.type}/{.spec.ports[*].port}/{.status.loadBalancer.ingress[0].ip}'
+      matches: '^LoadBalancer/80/[0-9]+(\.[0-9]+){3}$'
+      retry: {attempts: 6, interval: 3s}
+    - id: loadbalancer-backends
+      description: Service catalog-lb sends to exactly the 2 catalog pods
+      weight: 2
+      type: script
+      path: checks/backends.sh
+      args: [catalog-lb]
+      retry: {attempts: 3, interval: 3s}
+    - id: loadbalancer-reach
+      description: the external IP of catalog-lb answers with the catalog pods only
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      timeout: 30s
+      retry: {attempts: 6, interval: 3s}
+      shell: |
+        ip=$(kubectl get service catalog-lb -n catalog -o 'jsonpath={.status.loadBalancer.ingress[0].ip}')
+        test -n "$ip"
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+          body=$(curl -s --max-time 3 "http://$ip:80/hostname" || true)
+          if ! [[ $body =~ ^catalog-[a-z0-9]+-[a-z0-9]+$ ]]; then
+            echo "$ip:80 answered '$body'" >&2
+            exit 1
+          fi
+        done
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    timeout: 15m

@@ -120,6 +120,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/rbac-user-csr`                  | cluster-architecture | 1     | 12m  |
 | `cka/scheduling-taints-affinity`     | workloads-scheduling | 3     | 10m  |
 | `cka/sidecar-init-probes`            | workloads-scheduling | 1     | 12m  |
+| `cka/service-expose-types`           | services-networking  | 2     | 12m  |
 | `cka/storage-pv-pvc`                 | storage              | 1     | 8m   |
 | `cka/storage-pvc-pending`            | storage              | 1     | 10m  |
 | `cka/storageclass-dynamic`           | storage              | 1     | 10m  |
