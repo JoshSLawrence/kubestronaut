@@ -1,0 +1,56 @@
+name: e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: Comma separated scenario ids; empty runs every CKA scenario
+        required: false
+        default: ""
+  schedule:
+    - cron: "17 5 * * 1"
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    # Runs only for dispatch, the weekly schedule, or PRs labelled "e2e".
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      ids: ${{ steps.ids.outputs.ids }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - id: ids
+        env:
+          INPUT_SCENARIOS: ${{ inputs.scenarios }}
+        run: |
+          if [ -n "$INPUT_SCENARIOS" ]; then
+            ids=$(printf '%s' "$INPUT_SCENARIOS" | jq -Rc 'split(",") | map(gsub("\\s"; "")) | map(select(length > 0))')
+          else
+            ids=$(go run ./cmd/kubestronaut list --exam cka --json | jq -c 'map(.id)')
+          fi
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    needs: matrix
+    runs-on: ubuntu-24.04
+    # Must exceed the longest validation.timeout (20m) plus about 10m for tool
+    # install and kind node image pulls, otherwise the runner kills the test
+    # before it can delete its cluster.
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        id: ${{ fromJSON(needs.matrix.outputs.ids) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - run: mise run e2e
+        env:
+          KS_E2E_SCENARIOS: ${{ matrix.id }}

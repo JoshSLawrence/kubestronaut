@@ -1,4 +1,8 @@
 version: "2"
+run:
+  # Lints the opt-in end-to-end test too.
+  build-tags:
+    - e2e
 linters:
   default: none
   enable:
