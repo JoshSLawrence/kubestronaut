@@ -207,6 +207,49 @@ func TestPrepareSkipsExistingAndOverride(t *testing.T) {
 	}
 }
 
+func TestPreparePullsTheLoadBalancerImageForHA(t *testing.T) {
+	k, f := newKind()
+	f.Respond([]string{"docker", "image", "inspect"}, missingImage, nil)
+	var msgs []string
+	err := k.Prepare(context.Background(), backend.ClusterSpec{ControlPlanes: 3, NodeImage: "my/img:1"}, func(m string) { msgs = append(msgs, m) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Join(f.Lines(), "\n")
+	if !strings.Contains(lines, "docker pull "+LoadBalancerImage) {
+		t.Fatalf("the load balancer image must be pulled:\n%s", lines)
+	}
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "load balancer") || !strings.Contains(msgs[0], "internet") {
+		t.Fatalf("a slow pull must be announced: %v", msgs)
+	}
+
+	// Already local: only inspected, and nothing is announced.
+	k, f = newKind()
+	msgs = nil
+	if err := k.Prepare(context.Background(), backend.ClusterSpec{ControlPlanes: 3, NodeImage: "my/img:1"}, func(m string) { msgs = append(msgs, m) }); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(f.Lines(), "\n"), "docker pull") || len(msgs) != 0 {
+		t.Fatalf("a local image must not be pulled: %v %v", f.Lines(), msgs)
+	}
+
+	// One control plane has no load balancer.
+	k, f = newKind()
+	if err := k.Prepare(context.Background(), backend.ClusterSpec{ControlPlanes: 1, NodeImage: "my/img:1"}, nil); err != nil || len(f.Calls) != 0 {
+		t.Fatalf("a single control plane needs no docker call: %v %v", err, f.Lines())
+	}
+}
+
+func TestPrepareLoadBalancerPullFailureIsActionable(t *testing.T) {
+	k, f := newKind()
+	f.Respond([]string{"docker", "image", "inspect"}, missingImage, nil)
+	f.Respond([]string{"docker", "pull"}, execx.Result{ExitCode: 1, Stderr: []byte("dial tcp: lookup registry-1.docker.io")}, nil)
+	err := k.Prepare(context.Background(), backend.ClusterSpec{ControlPlanes: 3, NodeImage: "my/img:1"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "internet") || !strings.Contains(err.Error(), "registry-1.docker.io") {
+		t.Fatalf("err: %v", err)
+	}
+}
+
 func TestPrepareBuildsAndSmokeTests(t *testing.T) {
 	k, f := newKind()
 	f.Respond([]string{"docker", "image", "inspect"}, missingImage, nil)

@@ -153,12 +153,14 @@ func TestScriptEnv(t *testing.T) {
 	env := ScriptEnv(EnvParams{
 		AdminKubeconfig: "/a", Binary: "/bin/ks", Home: "/h", Cluster: "ks-x", Context: "ctx",
 		ScenarioDir: "/s", Lib: "/lib.sh",
-		Nodes: []backend.Node{{Name: "ks-x-control-plane", Alias: "controlplane"}, {Name: "ks-x-worker", Alias: "node01"}},
+		Nodes: []backend.Node{{Name: "ks-x-control-plane", Alias: "controlplane"}, {Name: "ks-x-control-plane3", Alias: "controlplane03"},
+			{Name: "ks-x-worker", Alias: "node01"}},
 	})
 	got := strings.Join(env, "\n")
 	for _, want := range []string{
 		"KUBECONFIG=/a", "KS_BIN=/bin/ks", "KUBESTRONAUT_HOME=/h", "KS_CLUSTER=ks-x", "KS_CONTEXT=ctx",
-		"KS_SCENARIO_DIR=/s", "KS_LIB=/lib.sh", "KS_NODE_CONTROLPLANE=ks-x-control-plane", "KS_NODE_NODE01=ks-x-worker",
+		"KS_SCENARIO_DIR=/s", "KS_LIB=/lib.sh", "KS_NODE_CONTROLPLANE=ks-x-control-plane", "KS_NODE_CONTROLPLANE03=ks-x-control-plane3",
+		"KS_NODE_NODE01=ks-x-worker",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %s in\n%s", want, got)

@@ -258,6 +258,23 @@ func TestValidateErrors(t *testing.T) {
 		{"pass percent", func(fstest.MapFS) string {
 			return strings.Replace(goodScenario, "spec:\n", "spec:\n  passPercent: 101\n", 1)
 		}, "passPercent"},
+		{"two control planes", func(fstest.MapFS) string {
+			return strings.Replace(goodScenario, "workers: 1", "controlPlanes: 2, workers: 1", 1)
+		}, "controlPlanes is 2, but must be 1 or 3"},
+		{"four control planes", func(fstest.MapFS) string {
+			return strings.Replace(goodScenario, "workers: 1", "controlPlanes: 4, workers: 1", 1)
+		}, "must be 1 or 3"},
+		{"control plane alias without HA", func(fstest.MapFS) string {
+			return strings.Replace(goodScenario, "node: controlplane", "node: controlplane02", 1)
+		}, "unknown node alias"},
+		{"control plane alias past the last", func(fstest.MapFS) string {
+			s := strings.Replace(goodScenario, "workers: 1", "controlPlanes: 3, workers: 1", 1)
+			return strings.Replace(s, "node: controlplane", "node: controlplane04", 1)
+		}, "controlplane or controlplane02..controlplane03"},
+		{"first control plane under another name", func(fstest.MapFS) string {
+			s := strings.Replace(goodScenario, "workers: 1", "controlPlanes: 3, workers: 1", 1)
+			return strings.Replace(s, "node: controlplane", "node: controlplane01", 1)
+		}, "unknown node alias"},
 		{"negative workers", func(fstest.MapFS) string { return strings.Replace(goodScenario, "workers: 1", "workers: -1", 1) }, "workers must not be negative"},
 		{"empty image", func(fstest.MapFS) string {
 			return strings.Replace(goodScenario, "spec:\n", "spec:\n  images: ['']\n", 1)
@@ -353,6 +370,14 @@ func TestVerbatimFilesAreNotTemplated(t *testing.T) {
 	// Only the directory named files at the scenario root is verbatim.
 	if templated("files/x.yaml") || templated("files") || !templated("setup/files/x.yaml") || !templated("filesx/a.yaml") {
 		t.Fatal("verbatim applies to the files/ subtree at the scenario root only")
+	}
+}
+
+func TestLoadBalancerNameFitsADNSLabel(t *testing.T) {
+	// kind names the HA load balancer <cluster>-external-load-balancer, and a
+	// container hostname is a DNS label of at most 63 characters.
+	if n := maxClusterName + len("-external-load-balancer"); n > 63 {
+		t.Fatalf("a %d character cluster name makes a %d character load balancer name", maxClusterName, n)
 	}
 }
 

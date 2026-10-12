@@ -167,6 +167,11 @@ func (k *Kind) StaleNodeImages(ctx context.Context) ([]string, error) {
 // Prepare implements backend.Backend by building the node image the first
 // time a Kubernetes version is used. An explicit --node-image is used as is.
 func (k *Kind) Prepare(ctx context.Context, s backend.ClusterSpec, notify func(string)) error {
+	if s.ControlPlanes > 1 {
+		if err := k.ensureLoadBalancerImage(ctx, notify); err != nil {
+			return err
+		}
+	}
 	if s.NodeImage != "" {
 		return nil
 	}
@@ -179,6 +184,23 @@ func (k *Kind) Prepare(ctx context.Context, s backend.ClusterSpec, notify func(s
 	}
 	_, err = k.buildNodeImage(ctx, s.KubernetesVersion)
 	return err
+}
+
+// ensureLoadBalancerImage pulls the image kind runs as the load balancer of an
+// HA cluster. kind would pull it during create, which counts against the
+// create timeout and fails without a clear reason on a slow link.
+func (k *Kind) ensureLoadBalancerImage(ctx context.Context, notify func(string)) error {
+	ok, err := k.imageExists(ctx, LoadBalancerImage)
+	if err != nil || ok {
+		return err
+	}
+	if notify != nil {
+		notify("Pulling the HA load balancer image " + LoadBalancerImage + " (needs internet)")
+	}
+	if _, err := k.run(ctx, "docker", "pull", LoadBalancerImage); err != nil {
+		return fmt.Errorf("pull the HA load balancer image: %w: check your internet connection and retry", err)
+	}
+	return nil
 }
 
 // buildNodeImage returns the node image tag for version, building it if it is

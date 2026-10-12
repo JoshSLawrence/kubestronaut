@@ -32,7 +32,8 @@ func (a *App) sshCmd() *cobra.Command {
 		Use:   "ssh <node> [-- cmd...]",
 		Short: "Open a shell on a node, or run a command there (controlplane, node01, ...)",
 		Long: "Open a shell on a node, or run a command there.\n" +
-			"Nodes are named controlplane, node01, node02, and so on.\n" +
+			"Nodes are named controlplane (controlplane02, controlplane03 in an HA\n" +
+			"cluster), node01, node02, and so on.\n" +
 			"Set KS_CLUSTER to target a specific cluster.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

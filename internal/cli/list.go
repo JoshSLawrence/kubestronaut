@@ -25,7 +25,7 @@ type listEntry struct {
 func entryOf(s *scenario.Scenario) listEntry {
 	e := listEntry{
 		ID: s.ID, Title: s.Metadata.Title, Domain: s.Metadata.Domain, Difficulty: s.Metadata.Difficulty,
-		Nodes: 1 + s.Spec.Cluster.Workers, Weight: s.Spec.Weight, Tags: s.Metadata.Tags,
+		Nodes: s.Spec.Cluster.CPs() + s.Spec.Cluster.Workers, Weight: s.Spec.Weight, Tags: s.Metadata.Tags,
 	}
 	if s.Spec.TimeLimit > 0 {
 		e.TimeLimit = ui.Duration(s.Spec.TimeLimit.D())
@@ -99,7 +99,7 @@ func (a *App) showCmd() *cobra.Command {
 			if s.Spec.Weight > 0 {
 				fprintf(w, "Weight:      %d%%\n", s.Spec.Weight)
 			}
-			fprintf(w, "Nodes:       %d\n", 1+s.Spec.Cluster.Workers)
+			fprintf(w, "Nodes:       %d\n", s.Spec.Cluster.CPs()+s.Spec.Cluster.Workers)
 			fprintf(w, "Hints:       %d\n", len(s.Spec.Hints))
 			fprintf(w, "Checks:      %d (%s to pass)\n", len(s.Spec.Checks), fmt.Sprintf("%d%%", s.Spec.PassPercent))
 			return nil

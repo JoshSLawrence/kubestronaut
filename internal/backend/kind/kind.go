@@ -126,10 +126,26 @@ func (k *Kind) List(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-var workerRE = regexp.MustCompile(`-worker(\d*)$`)
+var (
+	workerRE       = regexp.MustCompile(`-worker(\d*)$`)
+	controlPlaneRE = regexp.MustCompile(`-control-plane(\d*)$`)
+)
+
+// loadBalancerSuffix ends the name of the container kind adds in front of the
+// API servers of an HA cluster. It is not a Kubernetes node: it has no
+// kubelet, no containerd and no alias.
+const loadBalancerSuffix = "-external-load-balancer"
+
+// LoadBalancerImage is the image kind v0.33.0 runs as that load balancer
+// (loadbalancer.Image in its source). Keep it in step with kind in mise.toml.
+// Prepare pulls it first, so the pull does not count against the create
+// timeout.
+const LoadBalancerImage = "docker.io/envoyproxy/envoy:v1.36.2"
 
 // Nodes implements backend.Backend. Aliases follow the order described in
-// backend.NodeName: controlplane, then node01, node02, ... by worker index.
+// backend.NodeName: controlplane, controlplane02, ... by control-plane index,
+// then node01, node02, ... by worker index. The load balancer of an HA cluster
+// is skipped.
 func (k *Kind) Nodes(ctx context.Context, cluster string) ([]backend.Node, error) {
 	res, err := k.run(ctx, "kind", "get", "nodes", "--name", cluster)
 	if err != nil {
@@ -139,14 +155,23 @@ func (k *Kind) Nodes(ctx context.Context, cluster string) ([]backend.Node, error
 		name string
 		idx  int
 	}
-	var cp []backend.Node
+	type controlPlane struct {
+		name string
+		idx  int
+	}
+	var cps []controlPlane
 	var ws []worker
 	for _, l := range strings.Split(string(res.Stdout), "\n") {
 		l = strings.TrimSpace(l)
 		switch {
 		case l == "":
-		case strings.HasSuffix(l, "-control-plane"):
-			cp = append(cp, backend.Node{Name: l, Alias: backend.ControlPlaneAlias, Role: backend.RoleControlPlane})
+		case strings.HasSuffix(l, loadBalancerSuffix):
+		case controlPlaneRE.MatchString(l):
+			idx := 1 // kind names the first control plane "-control-plane" and then -control-plane2, -control-plane3
+			if m := controlPlaneRE.FindStringSubmatch(l); m[1] != "" {
+				idx, _ = strconv.Atoi(m[1])
+			}
+			cps = append(cps, controlPlane{l, idx})
 		case workerRE.MatchString(l):
 			idx := 1 // kind names the first worker "-worker" and then -worker2, -worker3
 			if m := workerRE.FindStringSubmatch(l); m[1] != "" {
@@ -157,11 +182,15 @@ func (k *Kind) Nodes(ctx context.Context, cluster string) ([]backend.Node, error
 			return nil, fmt.Errorf("unexpected node %q in cluster %s", l, cluster)
 		}
 	}
-	if len(cp) == 0 {
+	if len(cps) == 0 {
 		return nil, fmt.Errorf("cluster %s has no control-plane node: it may not exist (run `kubestronaut doctor`)", cluster)
 	}
+	sort.Slice(cps, func(i, j int) bool { return cps[i].idx < cps[j].idx })
 	sort.Slice(ws, func(i, j int) bool { return ws[i].idx < ws[j].idx })
-	nodes := cp
+	var nodes []backend.Node
+	for i, c := range cps {
+		nodes = append(nodes, backend.Node{Name: c.name, Alias: backend.ControlPlaneAliasN(i + 1), Role: backend.RoleControlPlane})
+	}
 	for i, w := range ws {
 		nodes = append(nodes, backend.Node{Name: w.name, Alias: backend.WorkerAlias(i + 1), Role: backend.RoleWorker})
 	}

@@ -86,7 +86,7 @@ func (f *Fake) Create(_ context.Context, s backend.ClusterSpec) error {
 		return f.CreateErr
 	}
 	f.Created = append(f.Created, s)
-	f.Clusters[s.Name] = Nodes(s.Name, s.Workers)
+	f.Clusters[s.Name] = NodesFor(s.Name, max(s.ControlPlanes, 1), s.Workers)
 	if s.Kubeconfig != "" {
 		// Like kind, leave an admin kubeconfig behind.
 		if err := os.MkdirAll(filepath.Dir(s.Kubeconfig), 0o700); err != nil {
@@ -97,10 +97,19 @@ func (f *Fake) Create(_ context.Context, s backend.ClusterSpec) error {
 	return nil
 }
 
-// Nodes builds the node list for a cluster with the given worker count.
-func Nodes(cluster string, workers int) []backend.Node {
-	cp, _ := backend.NodeName(cluster, backend.ControlPlaneAlias)
-	nodes := []backend.Node{{Name: cp, Alias: backend.ControlPlaneAlias, Role: backend.RoleControlPlane}}
+// Nodes builds the node list for a cluster with one control plane and the
+// given worker count.
+func Nodes(cluster string, workers int) []backend.Node { return NodesFor(cluster, 1, workers) }
+
+// NodesFor builds the node list for a cluster with the given numbers of
+// control planes and workers.
+func NodesFor(cluster string, controlPlanes, workers int) []backend.Node {
+	var nodes []backend.Node
+	for i := 1; i <= controlPlanes; i++ {
+		a := backend.ControlPlaneAliasN(i)
+		n, _ := backend.NodeName(cluster, a)
+		nodes = append(nodes, backend.Node{Name: n, Alias: a, Role: backend.RoleControlPlane})
+	}
 	for i := 1; i <= workers; i++ {
 		a := backend.WorkerAlias(i)
 		n, _ := backend.NodeName(cluster, a)

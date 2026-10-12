@@ -156,6 +156,60 @@ func TestStartHappyPath(t *testing.T) {
 	}
 }
 
+func TestStartHAScenarioCreatesThreeControlPlanes(t *testing.T) {
+	f := newFixture(t)
+	yaml := strings.Replace(scenYAML, "cluster: {workers: 1,", "cluster: {controlPlanes: 3, workers: 1,", 1)
+	fsys := fstest.MapFS{
+		"cka/pack.yaml":               {Data: []byte(packYAML)},
+		"cka/demo/scenario.yaml":      {Data: []byte(yaml)},
+		"cka/demo/prompt.md":          {Data: []byte("Fix {{node \"controlplane03\"}}.\n")},
+		"cka/demo/setup/s.sh":         {Data: []byte("true\n")},
+		"cka/demo/setup/m.yaml":       {Data: []byte("kind: Namespace\n")},
+		"cka/demo/solution/solve.sh":  {Data: []byte("true\n")},
+		"cka/demo/solution/README.md": {Data: []byte("Do the thing.\n")},
+	}
+	cat := scenario.LoadCatalog(fsys)
+	if len(cat.Problems) != 0 {
+		t.Fatal(cat.Problems)
+	}
+	f.lab.Catalog = cat
+	if err := f.lab.Start(context.Background(), "demo", StartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	c := f.be.Created[0]
+	if c.ControlPlanes != 3 || c.Workers != 1 {
+		t.Fatalf("spec: %+v", c)
+	}
+	st, err := f.lab.Store.Load()
+	if err != nil || len(st.Clusters[0].Nodes) != 4 {
+		t.Fatalf("state: %+v %v", st, err)
+	}
+	if !strings.Contains(f.out.String(), "4 node(s)") || !strings.Contains(f.out.String(), "Fix ks-cka-demo-control-plane3.") {
+		t.Fatalf("output:\n%s", f.out.String())
+	}
+	envs := ""
+	for _, call := range f.run.Calls {
+		if call.Name == "bash" {
+			envs = strings.Join(call.Env, "\n")
+		}
+	}
+	if !strings.Contains(envs, "KS_NODE_CONTROLPLANE02=ks-cka-demo-control-plane2") || !strings.Contains(envs, "KS_NODE_CONTROLPLANE03=ks-cka-demo-control-plane3") {
+		t.Fatalf("script env:\n%s", envs)
+	}
+}
+
+func TestCreateTimeoutGrowsWithControlPlanes(t *testing.T) {
+	if got := createTimeoutFor(1); got != 5*time.Minute {
+		t.Fatalf("one control plane: %s", got)
+	}
+	if got := createTimeoutFor(0); got != 5*time.Minute {
+		t.Fatalf("unset means one: %s", got)
+	}
+	if got := createTimeoutFor(3); got != 9*time.Minute {
+		t.Fatalf("three control planes: %s", got)
+	}
+}
+
 func TestStartFailureCleansUp(t *testing.T) {
 	f := newFixture(t)
 	f.run.Respond([]string{"bash"}, execx.Result{ExitCode: 1, Stderr: []byte("boom")}, nil)

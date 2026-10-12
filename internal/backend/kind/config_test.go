@@ -23,6 +23,21 @@ func TestBuildConfigGolden(t *testing.T) {
 	}
 }
 
+func TestBuildConfigThreeControlPlanesGolden(t *testing.T) {
+	img, err := ResolveImage("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(BuildConfig(backend.ClusterSpec{ControlPlanes: 3, Workers: 1}, img))
+	want, err := os.ReadFile("testdata/three-cp.golden.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != string(want) {
+		t.Fatalf("config mismatch\n--- got\n%s\n--- want\n%s", got, want)
+	}
+}
+
 func TestBuildConfigPatchesAndWorkers(t *testing.T) {
 	got := string(BuildConfig(backend.ClusterSpec{
 		Workers:        2,

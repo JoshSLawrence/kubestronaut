@@ -142,6 +142,34 @@ func TestNodesAliases(t *testing.T) {
 	}
 }
 
+func TestNodesHAClusterSkipsTheLoadBalancer(t *testing.T) {
+	k, f := newKind()
+	f.Respond([]string{"kind", "get", "nodes"}, execx.Result{Stdout: []byte(
+		"ks-x-control-plane3\nks-x-external-load-balancer\nks-x-worker\nks-x-control-plane2\nks-x-control-plane\n")}, nil)
+	nodes, err := k.Nodes(context.Background(), "ks-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, n := range nodes {
+		got = append(got, n.Alias+"="+n.Name+":"+string(n.Role))
+	}
+	want := []string{
+		"controlplane=ks-x-control-plane:control-plane",
+		"controlplane02=ks-x-control-plane2:control-plane",
+		"controlplane03=ks-x-control-plane3:control-plane",
+		"node01=ks-x-worker:worker",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("nodes:\n got %v\nwant %v", got, want)
+	}
+	for _, n := range nodes {
+		if name, _ := backend.NodeName("ks-x", n.Alias); name != n.Name {
+			t.Errorf("%s: NodeName=%s listed=%s", n.Alias, name, n.Name)
+		}
+	}
+}
+
 func TestNodesErrors(t *testing.T) {
 	k, f := newKind()
 	f.Respond([]string{"kind", "get", "nodes"}, execx.Result{Stdout: []byte("")}, nil)

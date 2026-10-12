@@ -30,9 +30,11 @@ const (
 	// prepareTimeout covers a first-time node image build: an apt install
 	// over a slow connection, well past the seconds it normally takes.
 	prepareTimeout = 15 * time.Minute
-	createTimeout  = 5 * time.Minute
-	loadTimeout    = 5 * time.Minute
-	cleanupBudget  = 2 * time.Minute
+	// createTimeout is for one control plane; createTimeoutFor adds time for
+	// each further one, which kind joins one after the other.
+	createTimeout = 5 * time.Minute
+	loadTimeout   = 5 * time.Minute
+	cleanupBudget = 2 * time.Minute
 )
 
 // Lab ties together the scenario catalog, a backend and the state store.
@@ -174,7 +176,7 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 
 	workers := s.Spec.Cluster.Workers
 	spec := backend.ClusterSpec{
-		Name: name, KubernetesVersion: version, NodeImage: o.NodeImage, ControlPlanes: 1,
+		Name: name, KubernetesVersion: version, NodeImage: o.NodeImage, ControlPlanes: s.Spec.Cluster.CPs(),
 		Workers: workers, Kubeconfig: admin, KubeadmPatches: s.Spec.Cluster.KindConfigPatches,
 		DisableDefaultCNI: s.Spec.Cluster.Networking.DisableDefaultCNI,
 	}
@@ -190,8 +192,8 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 	if built != nil {
 		built()
 	}
-	done := l.step("Creating cluster %s (%s, %d node(s))", name, version, 1+workers)
-	cctx, cancel := context.WithTimeout(ctx, createTimeout)
+	done := l.step("Creating cluster %s (%s, %d node(s))", name, version, s.Spec.Cluster.CPs()+workers)
+	cctx, cancel := context.WithTimeout(ctx, createTimeoutFor(spec.ControlPlanes))
 	err = l.Backend.Create(cctx, spec)
 	cancel()
 	if err != nil {
@@ -669,4 +671,11 @@ func (l *Lab) SSH(ctx context.Context, clusterOverride, alias string, argv []str
 
 func firstLine(err error) string {
 	return strings.SplitN(err.Error(), "\n", 2)[0]
+}
+
+// createTimeoutFor is the budget for creating a cluster with the given number
+// of control planes: 5 minutes, and 2 more for each control plane after the
+// first (9 minutes for an HA cluster).
+func createTimeoutFor(controlPlanes int) time.Duration {
+	return createTimeout + time.Duration(max(controlPlanes, 1)-1)*2*time.Minute
 }
