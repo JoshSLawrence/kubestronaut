@@ -81,7 +81,7 @@ func (c *connectivity) Run(ctx context.Context, env *Env) (Result, error) {
 	// a state the learner can be in, so it fails the check instead of
 	// reporting an infrastructure error. A crash-looping pod keeps the phase
 	// Running, so the container state decides.
-	if phase, _ := field(pods[0], "status", "phase").(string); phase != "Running" || !anyContainerRunning(pods[0]) {
+	if phase, _ := field(pods[0], "status", "phase").(string); phase != "Running" || !defaultContainerRunning(pods[0]) {
 		return fail("source %s is not running (phase %q)", describe(c.From), phase), nil
 	}
 	if c.Probe == "nc" && c.Expect == "denied" && net.ParseIP(c.host) == nil {
@@ -141,13 +141,23 @@ func (c *connectivity) checkResolves(ctx context.Context, env *Env) error {
 	return fmt.Errorf("host %s did not resolve: %s", c.host, strings.TrimSpace(out))
 }
 
-// anyContainerRunning reports whether some container of the pod is in the
-// running state.
-func anyContainerRunning(pod map[string]any) bool {
+// defaultContainerRunning reports whether the container that exec uses by
+// default is running: the one named by the kubectl.kubernetes.io/default-container
+// annotation, otherwise the first container in the spec.
+func defaultContainerRunning(pod map[string]any) bool {
+	name, _ := field(pod, "metadata", "annotations", "kubectl.kubernetes.io/default-container").(string)
+	if name == "" {
+		containers, _ := field(pod, "spec", "containers").([]any)
+		if len(containers) > 0 {
+			m, _ := containers[0].(map[string]any)
+			name, _ = field(m, "name").(string)
+		}
+	}
 	statuses, _ := field(pod, "status", "containerStatuses").([]any)
 	for _, st := range statuses {
-		if field(st.(map[string]any), "state", "running") != nil {
-			return true
+		m, _ := st.(map[string]any)
+		if n, _ := field(m, "name").(string); n == name || name == "" {
+			return field(m, "state", "running") != nil
 		}
 	}
 	return false
