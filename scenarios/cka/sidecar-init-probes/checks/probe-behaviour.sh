@@ -18,7 +18,12 @@ if [ -z "$pod" ]; then
   echo "no running pod" >&2
   exit 1
 fi
-mapfile -t cmd < <(kubectl -n logging get deployment legacy-app -o \
+# A while loop, not mapfile: this runs on the learner's machine, where bash may
+# be 3.2.
+cmd=()
+while IFS= read -r arg; do
+  cmd+=("$arg")
+done < <(kubectl -n logging get deployment legacy-app -o \
   'jsonpath={range .spec.template.spec.containers[?(@.name=="app")].readinessProbe.exec.command[*]}{@}{"\n"}{end}')
 if [ "${#cmd[@]}" -eq 0 ]; then
   echo "the app container has no exec readiness probe" >&2
