@@ -19,8 +19,17 @@ use `kubectl apply --server-side -f`.
 If you installed Flannel first, remove it before installing Calico, or the
 two plugins fight over `/etc/cni/net.d`: `kubectl delete -f
 /opt/cni/kube-flannel.yml`, delete the `10-flannel.conflist` file on every
-node (`kubestronaut ssh <node>`), and restart the pods that are already
-running so that they get Calico addresses.
+node (`kubestronaut ssh <node>`), then re-create the pods that are already
+running so that they get Calico addresses. The test pods have no controller,
+so deleting them loses them; replace each one in place instead:
+
+```bash
+kubectl -n net-test get pod client -o yaml | kubectl replace --force -f -
+```
+
+Do the same for `server` in `net-test` and for `vault` and `friend` in
+`secure`, and run `kubectl -n kube-system rollout restart deployment coredns`.
+If that gets tangled, `kubestronaut reset` starts the scenario again.
 
 Check the policy took effect:
 
