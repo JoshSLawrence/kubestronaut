@@ -24,4 +24,5 @@ YAML
 ```
 
 A `podSelector` inside `from` without a `namespaceSelector` only matches pods
-in the policy's own namespace, which is what keeps `other` blocked.
+in the policy's own namespace, which is what keeps `other/web` blocked. The
+`ports` list is what keeps the second port closed.

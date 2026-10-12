@@ -26,11 +26,13 @@ spec:
     - manifest: setup/pinned.yaml
   checks:
     - id: kubelet-enabled
-      description: kubelet is enabled on node01 (survives reboot)
+      description: the kubelet on node01 starts on boot
       weight: 2
       type: nodeExec
       node: node01
       command: [systemctl, is-enabled, kubelet]
+      # "enabled-runtime" (enabled until reboot only) must not count.
+      stdoutMatches: '^enabled\s*$'
     - id: node01-ready
       description: node01 is Ready
       weight: 3
@@ -43,9 +45,15 @@ spec:
       type: ready
       ref: {kind: deployment, name: pinned, namespace: ops}
       retry: {attempts: 10, interval: 3s}
+    - id: pinned-selector
+      description: deployment ops/pinned still targets node01
+      type: jsonPath
+      ref: {kind: deployment, name: pinned, namespace: ops}
+      path: '{.spec.template.spec.nodeSelector.kubernetes\.io/hostname}'
+      equals: '{{node "node01"}}'
   solution:
     script: solution/solve.sh
     readme: solution/README.md
   validation:
-    passBeforeSolution: []
+    passBeforeSolution: [pinned-selector]
     timeout: 15m

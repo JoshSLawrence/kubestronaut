@@ -30,14 +30,26 @@ spec:
       description: ServiceAccount dev/deployer exists
       type: resourceExists
       ref: {kind: serviceaccount, name: deployer, namespace: dev}
-    - id: rolebinding-exists
-      description: RoleBinding dev/deployer exists
+    - id: role-exists
+      description: Role dev/deployer exists
       type: resourceExists
+      ref: {kind: role, name: deployer, namespace: dev}
+    - id: clusterrole-exists
+      description: ClusterRole node-reader exists
+      type: resourceExists
+      ref: {kind: clusterrole, name: node-reader}
+    - id: rolebinding-binds-role
+      description: RoleBinding dev/deployer binds Role deployer to the service account
+      type: jsonPath
       ref: {kind: rolebinding, name: deployer, namespace: dev}
-    - id: clusterrolebinding-exists
-      description: ClusterRoleBinding deployer-node-reader exists
-      type: resourceExists
+      path: '{.roleRef.kind}/{.roleRef.name} {range .subjects[*]}{.kind}/{.namespace}/{.name} {end}'
+      matches: '^Role/deployer .*ServiceAccount/dev/deployer'
+    - id: clusterrolebinding-binds-role
+      description: ClusterRoleBinding deployer-node-reader binds ClusterRole node-reader to the service account
+      type: jsonPath
       ref: {kind: clusterrolebinding, name: deployer-node-reader}
+      path: '{.roleRef.kind}/{.roleRef.name} {range .subjects[*]}{.kind}/{.namespace}/{.name} {end}'
+      matches: '^ClusterRole/node-reader .*ServiceAccount/dev/deployer'
     - id: create-deployments
       description: deployer can create deployments in dev
       type: canI
@@ -81,6 +93,53 @@ spec:
       resource: secrets
       namespace: dev
       allowed: false
+    - id: no-configmaps
+      description: deployer cannot read configmaps in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: get
+      resource: configmaps
+      namespace: dev
+      allowed: false
+    - id: no-create-pods
+      description: deployer cannot create pods in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: create
+      resource: pods
+      namespace: dev
+      allowed: false
+    - id: no-delete-pods
+      description: deployer cannot delete pods in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: delete
+      resource: pods
+      namespace: dev
+      allowed: false
+    - id: no-pod-exec
+      description: deployer cannot exec into pods in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: create
+      resource: pods
+      subresource: exec
+      namespace: dev
+      allowed: false
+    - id: no-delete-nodes
+      description: deployer cannot delete nodes
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: delete
+      resource: nodes
+      allowed: false
+    - id: no-update-nodes
+      description: deployer cannot update nodes
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: update
+      resource: nodes
+      allowed: false
     - id: not-cluster-admin
       description: deployer is not bound to cluster-admin
       type: script
@@ -89,5 +148,14 @@ spec:
     script: solution/solve.sh
     readme: solution/README.md
   validation:
-    passBeforeSolution: [no-create-in-default, no-secrets, not-cluster-admin]
+    passBeforeSolution:
+      - no-create-in-default
+      - no-secrets
+      - no-configmaps
+      - no-create-pods
+      - no-delete-pods
+      - no-pod-exec
+      - no-delete-nodes
+      - no-update-nodes
+      - not-cluster-admin
     timeout: 10m

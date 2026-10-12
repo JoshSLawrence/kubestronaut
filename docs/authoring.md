@@ -93,7 +93,8 @@ Unknown fields are rejected, so typos fail validation instead of being ignored.
 `scenario.yaml`, the prompt and every `.yaml`, `.yml` and `.json` file are
 rendered with Go `text/template` before use:
 
-- `{{node "node01"}}` is the real node name (`controlplane`, `node01`, ...)
+- `{{node "node01"}}` expands to the real node name (for example
+  `ks-cka-demo-worker`), not the alias; aliases are `controlplane`, `node01`...
 - `{{.Context}}` and `{{.Cluster}}`
 
 Scripts are not templated; they get environment variables instead. In YAML,
@@ -111,12 +112,13 @@ setup:
   - wait:
       ref: {kind: deployment, name: web, namespace: ops}
       for: condition=Available       # or create, or delete
-      timeout: 2m                    # default
+      timeout: 2m                    # wins over the step timeout; default 2m
 ```
 
 A `wait` first waits for the object to exist, so it is safe right after an
-apply. Setup output goes to `setup.log` in the session directory and is shown
-with `-v`.
+apply. Setup output goes to `setup.log` in the session directory (mode 0600, it
+describes the fault) and is shown with `-v`. Setup scripts and manifests are
+deleted from the learner's scenario directory once setup has run.
 
 ### Script environment
 
@@ -142,8 +144,9 @@ shellcheck and `shfmt -i 2 -ci`.
 
 Every check has `id` (kebab-case, unique), `description`, and optional
 `weight` (default 1), `timeout` (default 20s, per attempt) and
-`retry: {attempts, interval}`. Failure messages are shown to the learner, so
-they never contain the answer.
+`retry: {attempts, interval}`. Descriptions and failure messages are shown to
+the learner before they have solved anything, so they must not name the fault
+or the answer.
 
 A `ref` is `{kind, name?, namespace?, selector?, fieldSelector?}`.
 
@@ -202,8 +205,7 @@ A pack groups scenarios for one certification.
    ```
 
 2. Add scenarios under `scenarios/<pack>/<name>/` as above.
-3. Embed the pack by adding its directory to the directive in
-   `scenarios/embed.go`: `//go:embed cka ckad`.
+3. Nothing else: `scenarios/embed.go` embeds every top-level directory.
 4. Run `mise run ci`, then `validate --e2e` for each new scenario.
 
 Packs outside the repository work too: put the same layout under a directory

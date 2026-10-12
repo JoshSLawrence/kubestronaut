@@ -10,7 +10,7 @@ The first pack is CKA. CKAD and CKS packs plug in without engine changes; see
 
 ## Requirements
 
-- macOS or Linux
+- macOS or Linux (the session lock uses `flock`, so Windows is not supported)
 - Docker with at least 6 GiB of memory (a scenario uses one or two kind nodes)
 - [mise](https://mise.jdx.dev/) to install the pinned toolchain
 
@@ -42,7 +42,7 @@ reads or writes `~/.kube/config`; it keeps its own kubeconfig under
 | ------- | ------- |
 | `list [--exam cka] [--domain d] [--json] [-a]` | List scenarios |
 | `show <id>` | Show metadata (no prompt, no spoilers) |
-| `start <id> [--k8s-version v] [--force]` | Create cluster, run setup, print the task |
+| `start <id> [--k8s-version v] [--node-image img] [--force] [--keep-on-failure]` | Create cluster, run setup, print the task |
 | `status` | Show the active session |
 | `prompt` | Print the task again |
 | `env` | Print `export KUBECONFIG=...` for `eval` |
@@ -71,6 +71,11 @@ Global flags:
 Exit codes: 0 success or grade passed, 1 grade or validation did not pass,
 2 usage or runtime error, 3 no active session.
 
+`--node-image` overrides the pinned kind node image, and `--keep-on-failure`
+leaves a half-built cluster up so you can inspect it. Each session directory
+contains `setup.log`, which describes the injected fault: do not read it
+before you are done.
+
 Only one session runs at a time, which keeps Docker memory in check. Exam mode
 (`exam ...`) is planned; see [docs/design.md](docs/design.md).
 
@@ -94,7 +99,9 @@ mise run e2e       # real clusters; takes several minutes
 
 `mise run e2e` runs `kubestronaut validate --e2e` for each scenario: it starts
 a cluster, requires every check to fail, runs the reference solution, and
-requires a 100% grade. Narrow it with `KS_E2E_SCENARIOS=cka/rbac-dev-access`.
+requires a 100% grade. Checks that legitimately pass before the solution (for
+example "must stay denied" checks) are listed in
+`validation.passBeforeSolution`. Narrow it with `KS_E2E_SCENARIOS=cka/rbac-dev-access`.
 
 Run `pre-commit install` to get the same checks on every commit.
 

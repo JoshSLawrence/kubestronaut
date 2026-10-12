@@ -25,19 +25,17 @@ spec:
         ref: {kind: pod, namespace: shop, selector: app}
         for: condition=Ready
     - wait:
-        ref: {kind: pod, name: intruder, namespace: other}
+        ref: {kind: pod, namespace: other, selector: app}
         for: condition=Ready
   checks:
     - id: policy-exists
       description: NetworkPolicy shop/api-allow-web exists
       type: resourceExists
       ref: {kind: networkpolicy, name: api-allow-web, namespace: shop}
-    - id: policy-selects-api
-      description: the policy selects the api pods
-      type: jsonPath
-      ref: {kind: networkpolicy, name: api-allow-web, namespace: shop}
-      path: '{.spec.podSelector.matchLabels.app}'
-      equals: api
+    - id: api-ready
+      description: the api pods in shop are still running
+      type: ready
+      ref: {kind: pod, namespace: shop, selector: app=api}
     - id: web-allowed
       description: shop/web can reach api on 8080
       weight: 2
@@ -45,7 +43,7 @@ spec:
       from: {kind: pod, name: web, namespace: shop}
       to: api.shop.svc.cluster.local:8080
       expect: allowed
-      retry: {attempts: 5, interval: 2s}
+      retry: {attempts: 3, interval: 3s}
     - id: debug-denied
       description: shop/debug cannot reach api
       weight: 2
@@ -53,7 +51,7 @@ spec:
       from: {kind: pod, name: debug, namespace: shop}
       to: api.shop.svc.cluster.local:8080
       expect: denied
-      retry: {attempts: 5, interval: 2s}
+      retry: {attempts: 3, interval: 3s}
     - id: other-denied
       description: pods in namespace other cannot reach api
       weight: 2
@@ -61,10 +59,26 @@ spec:
       from: {kind: pod, name: intruder, namespace: other}
       to: api.shop.svc.cluster.local:8080
       expect: denied
-      retry: {attempts: 5, interval: 2s}
+      retry: {attempts: 3, interval: 3s}
+    - id: other-web-denied
+      description: other/web, labelled like the real client, cannot reach api
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: web, namespace: other}
+      to: api.shop.svc.cluster.local:8080
+      expect: denied
+      retry: {attempts: 3, interval: 3s}
+    - id: web-other-port-denied
+      description: shop/web cannot reach api on any other port
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: web, namespace: shop}
+      to: api.shop.svc.cluster.local:8081
+      expect: denied
+      retry: {attempts: 3, interval: 3s}
   solution:
     script: solution/solve.sh
     readme: solution/README.md
   validation:
-    passBeforeSolution: [web-allowed]
+    passBeforeSolution: [api-ready, web-allowed]
     timeout: 10m

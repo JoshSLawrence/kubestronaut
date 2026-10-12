@@ -238,10 +238,10 @@ kubestronaut/
         └── e2e_test.go
 ```
 
-`scenarios/embed.go` is `package scenarios` with `//go:embed cka` and
+`scenarios/embed.go` is `package scenarios` with `//go:embed *` and
 `var FS embed.FS`. go:embed cannot reach parent directories, which is why the
-file sits here. Adding a pack means adding a directory and one word in the
-embed line; no engine code changes. Test fixtures go in
+file sits here. Adding a pack means adding a directory; no engine code and
+no embed edit. Test fixtures go in
 `internal/scenario/testdata`, not in the embedded tree. (The
 `scenarios/testdata` entry in the tree above is a placeholder; drop it.)
 
@@ -501,7 +501,7 @@ spec:
     - wait:
         ref: {kind: deployment, name: pinned, namespace: ops}
         for: create                 # create | condition=<C> | delete
-        timeout: 1m                 # default 2m
+        timeout: 1m                 # wins over the step timeout; default 2m
   checks:                           # see 4.3
     - id: node01-ready
       description: node01 is Ready
@@ -808,9 +808,12 @@ the e2e validation proves it.
   `kubeadmConfigPatches`.
 - **Image table.** `internal/backend/kind/images.go` maps versions to the
   digests published for kind v0.33.0:
-  - v1.35.8 -> `sha256:07b2536e30b8...09323c0`
-  - v1.36.4 -> `sha256:099e049362a1...8cfaed`
-  - v1.37.0 -> `sha256:a1ed56cfb0e7...fd08d67d`
+
+  | Version | Digest |
+  | ------- | ------ |
+  | v1.35.8 | `sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0` |
+  | v1.36.4 | `sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed` |
+  | v1.37.0 | `sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5` |
 
   Copy the full digests from the kind v0.33.0 release notes. The default is
   v1.36.4. An unknown version is an error unless `--node-image` is given.
