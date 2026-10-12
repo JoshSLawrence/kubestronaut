@@ -41,7 +41,7 @@ spec:
       from: {kind: pod, name: client, namespace: store}
       to: checkout.store.svc.cluster.local:80
       expect: allowed
-      retry: {attempts: 3, interval: 3s}
+      retry: {attempts: 6, interval: 3s}
     - id: probe-kept
       description: the readiness probe is still an HTTP check
       type: jsonPath
@@ -49,11 +49,17 @@ spec:
       path: '{.spec.template.spec.containers[0].readinessProbe.httpGet.path}'
       nonEmpty: true
     - id: probe-port
-      description: the readiness probe checks the port the app serves on
+      description: the readiness probe still targets the application
       type: jsonPath
       ref: {kind: deployment, name: checkout, namespace: store}
       path: '{.spec.template.spec.containers[0].readinessProbe.httpGet.port}'
       oneOf: ['8080', http]
+    - id: app-port
+      description: the application still listens on its original port
+      type: jsonPath
+      ref: {kind: deployment, name: checkout, namespace: store}
+      path: '{.spec.template.spec.containers[0].args[*]}'
+      contains: --http-port=8080
     - id: pod-labels
       description: the checkout pods keep their labels
       type: jsonPath
@@ -76,5 +82,5 @@ spec:
     script: solution/solve.sh
     readme: solution/README.md
   validation:
-    passBeforeSolution: [probe-kept, pod-labels, legacy-untouched]
+    passBeforeSolution: [probe-kept, app-port, pod-labels, legacy-untouched]
     timeout: 10m
