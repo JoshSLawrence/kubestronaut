@@ -131,6 +131,15 @@ type ClusterConf struct {
 	Workers           int      `json:"workers,omitempty"`
 	KubernetesVersion string   `json:"kubernetesVersion,omitempty"`
 	KindConfigPatches []string `json:"kindConfigPatches,omitempty"`
+	// Networking passes the few kind networking options scenarios need.
+	Networking NetworkingConf `json:"networking,omitempty"`
+}
+
+// NetworkingConf selects kind networking options.
+type NetworkingConf struct {
+	// DisableDefaultCNI creates the cluster without kind's CNI (kindnet), so
+	// nodes stay NotReady until the learner installs one.
+	DisableDefaultCNI bool `json:"disableDefaultCNI,omitempty"`
 }
 
 // SetupStep is one ordered setup action; exactly one of Script, Manifest or

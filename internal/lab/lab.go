@@ -176,6 +176,7 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 	spec := backend.ClusterSpec{
 		Name: name, KubernetesVersion: version, NodeImage: o.NodeImage, ControlPlanes: 1,
 		Workers: workers, Kubeconfig: admin, KubeadmPatches: s.Spec.Cluster.KindConfigPatches,
+		DisableDefaultCNI: s.Spec.Cluster.Networking.DisableDefaultCNI,
 	}
 	// Prepare gets its own budget so a first-time image build cannot eat
 	// into the cluster create timeout.

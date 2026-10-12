@@ -21,6 +21,9 @@ func BuildConfig(spec backend.ClusterSpec, image string) []byte {
 			fmt.Fprintf(&b, "  - %s\n", q)
 		}
 	}
+	if spec.DisableDefaultCNI {
+		b.WriteString("networking:\n  disableDefaultCNI: true\n")
+	}
 	b.WriteString("nodes:\n")
 	for i := 0; i < max(spec.ControlPlanes, 1); i++ {
 		fmt.Fprintf(&b, "  - role: control-plane\n    image: %s\n", image)

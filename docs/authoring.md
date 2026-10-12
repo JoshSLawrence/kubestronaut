@@ -71,6 +71,8 @@ spec:
   exclusive: true              # changes node or cluster-wide state
   cluster:
     workers: 1                 # default 0, a single node
+    networking:
+      disableDefaultCNI: true  # no CNI; nodes stay NotReady (see below)
     kubernetesVersion: v1.36.4 # default: the engine default
   images:                      # preloaded into the nodes
     - registry.k8s.io/e2e-test-images/agnhost:2.61
@@ -87,6 +89,13 @@ spec:
 ```
 
 Unknown fields are rejected, so typos fail validation instead of being ignored.
+
+`cluster.networking.disableDefaultCNI` creates the cluster without kind's CNI
+(kindnet) for scenarios where the learner installs one. The nodes cannot
+become Ready, so `kind create` runs with `--wait 0s` instead of waiting for
+them; setup must not assume Ready nodes (wait for the API server, and apply
+workloads that tolerate Pending pods, because `connectivity` checks report
+a non-running source pod as a failure, not an error).
 
 ### Templating
 

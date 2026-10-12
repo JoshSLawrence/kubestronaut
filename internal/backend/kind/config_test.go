@@ -53,3 +53,13 @@ func TestResolveImage(t *testing.T) {
 		t.Fatalf("unknown version must be actionable: %v", err)
 	}
 }
+
+func TestBuildConfigDisableDefaultCNI(t *testing.T) {
+	got := string(BuildConfig(backend.ClusterSpec{DisableDefaultCNI: true}, "img"))
+	if !strings.Contains(got, "networking:\n  disableDefaultCNI: true\nnodes:\n") {
+		t.Fatalf("networking block missing or misplaced:\n%s", got)
+	}
+	if got := string(BuildConfig(backend.ClusterSpec{}, "img")); strings.Contains(got, "networking") {
+		t.Fatalf("default config must not mention networking:\n%s", got)
+	}
+}

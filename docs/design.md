@@ -495,6 +495,8 @@ spec:
     workers: 1                      # default 0 (single node)
     kubernetesVersion: v1.36.4      # default: engine default
     kindConfigPatches: []           # optional raw kubeadm patches
+    networking:
+      disableDefaultCNI: false      # true: no CNI, create uses --wait 0s
   images:                           # optional, preloaded into nodes
     - registry.k8s.io/e2e-test-images/agnhost:2.61
   prompt: prompt.md                 # required, relative file
@@ -812,7 +814,9 @@ the e2e validation proves it.
 
   Created with `kind create cluster --name N --config F --kubeconfig
   sessions/<id>/admin.kubeconfig --wait 3m`. `kindConfigPatches` go into
-  `kubeadmConfigPatches`.
+  `kubeadmConfigPatches`. With `networking.disableDefaultCNI` the config gets
+  `networking: {disableDefaultCNI: true}` and kind runs with `--wait 0s`,
+  because the nodes cannot become Ready without a CNI.
 - **Image table.** `internal/backend/kind/images.go` maps versions to the
   digests published for kind v0.33.0:
 

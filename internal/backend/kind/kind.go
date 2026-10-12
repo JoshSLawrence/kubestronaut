@@ -27,6 +27,10 @@ const Prefix = "ks-"
 // WaitForControlPlane is passed to `kind create cluster --wait`.
 const WaitForControlPlane = "3m"
 
+// WaitNone is used instead when the cluster has no CNI: its nodes cannot
+// become Ready, so waiting would idle for the whole WaitForControlPlane.
+const WaitNone = "0s"
+
 // Kind runs clusters through the kind CLI.
 type Kind struct {
 	Runner execx.Runner
@@ -84,8 +88,12 @@ func (k *Kind) Create(ctx context.Context, s backend.ClusterSpec) error {
 	if err := os.WriteFile(cfg, BuildConfig(s, image), 0o600); err != nil {
 		return fmt.Errorf("write kind config: %w", err)
 	}
+	wait := WaitForControlPlane
+	if s.DisableDefaultCNI {
+		wait = WaitNone
+	}
 	_, err = k.run(ctx, "kind", "create", "cluster", "--name", s.Name, "--config", cfg,
-		"--kubeconfig", s.Kubeconfig, "--wait", WaitForControlPlane)
+		"--kubeconfig", s.Kubeconfig, "--wait", wait)
 	return err
 }
 
