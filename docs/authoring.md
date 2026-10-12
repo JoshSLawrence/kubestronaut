@@ -136,9 +136,35 @@ materialized scenario directory, with:
 
 The library provides `ks_node <alias> <cmd...>` (run on a node through
 `kubestronaut ssh`, so scripts never call docker), `ks_node_name <alias>`,
-`ks_wait_node <alias> Ready|NotReady <secs>` and `ks_log`. Scripts start with
+`ks_wait_node <alias> Ready|NotReady <secs>`, `ks_log`, and the helpers below.
+Scripts start with
 `#!/usr/bin/env bash` and `set -euo pipefail`, are `chmod +x`, and must pass
 shellcheck and `shfmt -i 2 -ci`.
+
+#### Files on nodes
+
+`ks_copy_to <alias> <local-dir> <node-dir>` copies the contents of a local
+directory (for example `files/` shipped with the scenario) onto a node and
+creates the destination. It streams a tar archive through `ks_node`, so the
+node needs nothing but `mkdir` and `tar`.
+
+#### Facts only setup knows
+
+Setup often creates a value the checks must compare against later: a random
+token, an object uid, a file hash. Store it with `ks_answer_put <key> <value>`
+in setup and verify it in a `script` check with `ks_answer_check <key>
+<value>`, which exits 0 on a match and prints nothing:
+
+```bash
+ks_answer_put token "$token"                    # setup
+ks_answer_check token "$(cat /root/token.txt)"  # check
+```
+
+Only the sha256 of the value is written, to `$KS_SCENARIO_DIR/.answers/<key>`
+with mode 0600. The learner can read the hash but cannot reverse a random
+value, and the answers survive the removal of setup files. Keys are letters,
+digits, `.`, `_` and `-`; anything else fails so a key cannot escape the
+directory.
 
 ### Tools on the nodes
 
@@ -182,7 +208,11 @@ Command expectations are `exitCode` (default 0), `stdoutContains` and
 
 `connectivity` execs `/agnhost connect` in the source pod (`probe: nc` uses
 `nc -z`), so source pods must run agnhost or busybox images. A `denied` check
-passes only on a timeout or refusal, never on a DNS failure.
+passes only on a timeout or refusal, never on a DNS failure. A source pod that
+exists but is not Running (Pending, crashed) fails the check with "not
+running" rather than reporting an error, so scenarios can probe from a pod
+that only starts once the learner has fixed something. A source pod that does
+not exist at all is still an error: that is a scenario bug.
 
 YAML pitfalls: `true`, `yes` and `no` become booleans, so write
 `command: ['true']` and `stdoutContains: 'yes'`.
