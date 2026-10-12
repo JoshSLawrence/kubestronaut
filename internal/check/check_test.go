@@ -397,7 +397,9 @@ func TestPodExec(t *testing.T) {
 }
 
 func TestConnectivity(t *testing.T) {
-	running := map[string]any{"status": map[string]any{"phase": "Running"}}
+	running := map[string]any{"status": map[string]any{"phase": "Running", "containerStatuses": []any{
+		map[string]any{"state": map[string]any{"running": map[string]any{}}},
+	}}}
 	k := &kube.Fake{Objects: []map[string]any{obj("Pod", "shop", "web", running)}}
 	env := &Env{Kube: k}
 	var res execx.Result
@@ -523,6 +525,20 @@ func TestConnectivity(t *testing.T) {
 	}
 	if execCalled {
 		t.Fatal("a pod that is not running must not be exec'd into")
+	}
+	// Phase Running but every container waiting, as in CrashLoopBackOff.
+	crashed := map[string]any{"status": map[string]any{"phase": "Running", "containerStatuses": []any{
+		map[string]any{"state": map[string]any{"waiting": map[string]any{"reason": "CrashLoopBackOff"}}},
+	}}}
+	k.Objects = []map[string]any{obj("Pod", "shop", "web", crashed)}
+	for _, expect := range []string{"allowed", "denied"} {
+		r, err := run1("expect: " + expect)
+		if err != nil || r.Passed || !strings.Contains(r.Message, "source pod shop/web is not running") {
+			t.Fatalf("crash-looping source pod with expect %s must fail cleanly: %+v %v", expect, r, err)
+		}
+	}
+	if execCalled {
+		t.Fatal("a pod without a running container must not be exec'd into")
 	}
 	k.Objects = []map[string]any{obj("Pod", "shop", "web", running)}
 	k.ExecFunc = func(string, string, string, []string) (execx.Result, error) {

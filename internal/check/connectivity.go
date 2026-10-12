@@ -76,10 +76,12 @@ func (c *connectivity) Run(ctx context.Context, env *Env) (Result, error) {
 	if len(pods) == 0 {
 		return Result{}, fmt.Errorf("source pod %s not found", describe(c.From))
 	}
-	// A pod that exists but is not running (Pending before a CNI exists, or
-	// crashed) cannot probe anything. That is a state the learner can be in,
-	// so it fails the check instead of reporting an infrastructure error.
-	if phase, _ := field(pods[0], "status", "phase").(string); phase != "Running" {
+	// A pod that exists but has no running container (Pending before a CNI
+	// exists, or a crash loop between restarts) cannot probe anything. That is
+	// a state the learner can be in, so it fails the check instead of
+	// reporting an infrastructure error. A crash-looping pod keeps the phase
+	// Running, so the container state decides.
+	if phase, _ := field(pods[0], "status", "phase").(string); phase != "Running" || !anyContainerRunning(pods[0]) {
 		return fail("source %s is not running (phase %q)", describe(c.From), phase), nil
 	}
 	if c.Probe == "nc" && c.Expect == "denied" && net.ParseIP(c.host) == nil {
@@ -137,4 +139,16 @@ func (c *connectivity) checkResolves(ctx context.Context, env *Env) error {
 		return nil
 	}
 	return fmt.Errorf("host %s did not resolve: %s", c.host, strings.TrimSpace(out))
+}
+
+// anyContainerRunning reports whether some container of the pod is in the
+// running state.
+func anyContainerRunning(pod map[string]any) bool {
+	statuses, _ := field(pod, "status", "containerStatuses").([]any)
+	for _, st := range statuses {
+		if field(st.(map[string]any), "state", "running") != nil {
+			return true
+		}
+	}
+	return false
 }
