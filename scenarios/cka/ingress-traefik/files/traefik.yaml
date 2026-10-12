@@ -267,6 +267,6 @@ metadata:
     app.kubernetes.io/instance: edge-traefik
     helm.sh/chart: traefik-41.7.1
     app.kubernetes.io/managed-by: Helm
-  name: edge-traefik
+  name: traefik
 spec:
   controller: traefik.io/ingress-controller

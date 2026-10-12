@@ -28,6 +28,7 @@ render_traefik() {
     --set service.type=NodePort \
     --set ports.web.nodePort=30080 \
     --set ports.websecure.nodePort=30443 \
+    --set ingressClass.name=traefik \
     --set ingressClass.isDefaultClass=false \
     --set api.dashboard=false \
     --set gateway.enabled=false \
