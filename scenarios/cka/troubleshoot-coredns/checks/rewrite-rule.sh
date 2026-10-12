@@ -8,8 +8,11 @@ set -euo pipefail
 # Service's address, which goes stale when the Service is recreated.
 ip=$(kubectl -n apps get service legacy -o 'jsonpath={.spec.clusterIP}')
 corefile=$(kubectl -n kube-system get configmap coredns -o 'jsonpath={.data.Corefile}')
-active=$(grep -v '^[[:space:]]*#' <<<"$corefile" || true)
-if [ -n "$ip" ] && grep -Fq "$ip" <<<"$active"; then
+# Drop comments, whole-line and trailing, then look for the address as a whole
+# token so that 10.96.1.5 does not match 10.96.1.53.
+active=$(printf '%s\n' "$corefile" | sed 's/#.*//')
+ipre=${ip//./\\.}
+if [ -n "$ip" ] && grep -Eq "(^|[^0-9.])${ipre}([^0-9]|\$)" <<<"$active"; then
   echo "the Corefile holds an address that goes stale when the Service changes" >&2
   exit 1
 fi
