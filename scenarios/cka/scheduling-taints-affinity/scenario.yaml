@@ -1,0 +1,86 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: scheduling-taints-affinity
+  title: Run a workload only on tainted GPU nodes
+  domain: workloads-scheduling
+  difficulty: medium
+  tags: [scheduling, taints, tolerations, affinity]
+spec:
+  timeLimit: 10m
+  weight: 6
+  context: k8s-sched
+  namespaces: [ml]
+  exclusive: true
+  cluster:
+    workers: 2
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl describe node` shows the labels and taints you have to work
+      with."
+    - A taint repels pods without a matching toleration; a toleration does
+      not choose a node.
+    - Node affinity can be required or only preferred.
+  setup:
+    - script: setup/prepare-nodes.sh
+    - manifest: setup/trainer.yaml
+    - wait:
+        ref: {kind: deployment, name: trainer, namespace: ml}
+        for: condition=Available
+  checks:
+    - id: trainer-ready
+      description: both trainer replicas are rolled out and ready
+      weight: 2
+      type: ready
+      ref: {kind: deployment, name: trainer, namespace: ml}
+      minReady: 2
+      retry: {attempts: 8, interval: 4s}
+    - id: on-gpu-node
+      description: every trainer pod runs on the GPU node
+      weight: 2
+      type: jsonPath
+      ref: {kind: pod, namespace: ml, selector: app=trainer}
+      match: all
+      minItems: 2
+      path: '{.spec.nodeName}'
+      equals: '{{node "node02"}}'
+      retry: {attempts: 8, interval: 4s}
+    - id: required-affinity
+      description: the pods are constrained by a required rule on the node label
+      weight: 2
+      type: jsonPath
+      ref: {kind: deployment, name: trainer, namespace: ml}
+      path: '{.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[*].matchExpressions[*].key}/{.spec.template.spec.nodeSelector.accelerator}'
+      matches: 'accelerator|/gpu$'
+    - id: toleration
+      description: the pod template carries a toleration for the node's taint
+      type: jsonPath
+      ref: {kind: deployment, name: trainer, namespace: ml}
+      path: '{range .spec.template.spec.tolerations[*]}{.key}:{.operator};{end}'
+      matches: '(^|;)(dedicated:|:Exists)'
+    - id: taint-kept
+      description: the GPU node is still tainted
+      type: jsonPath
+      ref: {kind: node, name: '{{node "node02"}}'}
+      path: '{.spec.taints[*].key}'
+      contains: dedicated
+    - id: node01-unlabelled
+      description: the other worker has not been labelled as a GPU node
+      type: jsonPath
+      ref: {kind: node, name: '{{node "node01"}}'}
+      path: '{.metadata.labels.accelerator}'
+      empty: true
+    - id: no-nodename
+      description: the pods are not bound to a node by name
+      type: jsonPath
+      ref: {kind: deployment, name: trainer, namespace: ml}
+      path: '{.spec.template.spec.nodeName}'
+      empty: true
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [trainer-ready, taint-kept, node01-unlabelled, no-nodename]
+    timeout: 12m

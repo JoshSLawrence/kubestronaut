@@ -1,0 +1,82 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: quota-limitrange
+  title: Enforce defaults and a quota in a team namespace
+  domain: workloads-scheduling
+  difficulty: medium
+  tags: [limitrange, resourcequota, resources]
+spec:
+  timeLimit: 10m
+  weight: 5
+  context: k8s-quota
+  namespaces: [team-a]
+  exclusive: false
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl create quota` takes --hard with a comma separated list."
+    - In a LimitRange, `default` sets the limit and `defaultRequest` sets
+      the request.
+    - Admission only changes pods when they are created.
+  setup:
+    - manifest: setup/web.yaml
+    - wait:
+        ref: {kind: deployment, name: web, namespace: team-a}
+        for: condition=Available
+  checks:
+    - id: limitrange
+      description: LimitRange team-a/container-defaults sets the container defaults and cap
+      weight: 3
+      type: jsonPath
+      ref: {kind: limitrange, name: container-defaults, namespace: team-a}
+      path: '{.spec.limits[?(@.type=="Container")].default.cpu}/{.spec.limits[?(@.type=="Container")].default.memory}/{.spec.limits[?(@.type=="Container")].defaultRequest.cpu}/{.spec.limits[?(@.type=="Container")].defaultRequest.memory}/{.spec.limits[?(@.type=="Container")].max.cpu}'
+      equals: 200m/128Mi/100m/64Mi/500m
+    - id: quota
+      description: ResourceQuota team-a/team-a-quota sets the namespace limits
+      weight: 3
+      type: jsonPath
+      ref: {kind: resourcequota, name: team-a-quota, namespace: team-a}
+      path: '{.spec.hard.pods}/{.spec.hard.requests\.cpu}{.spec.hard.cpu}/{.spec.hard.limits\.memory}'
+      equals: 5/1/1Gi
+    - id: quota-active
+      description: the quota is counting the namespace's pods
+      type: jsonPath
+      ref: {kind: resourcequota, name: team-a-quota, namespace: team-a}
+      path: '{.status.used.pods}'
+      gte: 3
+      retry: {attempts: 8, interval: 4s}
+    - id: max-enforced
+      description: a pod with a CPU limit of 1 is refused in team-a
+      weight: 2
+      type: script
+      path: checks/max-enforced.sh
+    - id: web-ready
+      description: all three web pods are running
+      type: ready
+      ref: {kind: deployment, name: web, namespace: team-a}
+      minReady: 3
+      retry: {attempts: 12, interval: 4s}
+    - id: web-template-bare
+      description: the web deployment itself declares no resources
+      type: jsonPath
+      ref: {kind: deployment, name: web, namespace: team-a}
+      path: '{.spec.template.spec.containers[*].resources.requests}{.spec.template.spec.containers[*].resources.limits}'
+      empty: true
+    - id: defaults-injected
+      description: every web pod carries the default requests
+      weight: 2
+      type: jsonPath
+      ref: {kind: pod, namespace: team-a, selector: app=web}
+      match: all
+      minItems: 3
+      path: '{.spec.containers[0].resources.requests.cpu}/{.spec.containers[0].resources.requests.memory}/{.spec.containers[0].resources.limits.cpu}/{.spec.containers[0].resources.limits.memory}'
+      equals: 100m/64Mi/200m/128Mi
+      retry: {attempts: 12, interval: 4s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [web-ready, web-template-bare]
+    timeout: 10m

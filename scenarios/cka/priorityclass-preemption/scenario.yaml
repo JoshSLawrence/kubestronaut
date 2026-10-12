@@ -1,0 +1,82 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: priorityclass-preemption
+  title: Make a critical workload preempt batch pods
+  domain: workloads-scheduling
+  difficulty: medium
+  tags: [priorityclass, preemption, scheduling]
+spec:
+  timeLimit: 10m
+  weight: 5
+  context: k8s-priority
+  namespaces: [batch, prod]
+  exclusive: true
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl get priorityclass` lists the classes with their values."
+    - The built-in `system-*` classes are not user-defined.
+    - Pods choose their class with `spec.priorityClassName`.
+  setup:
+    - manifest: setup/priorityclasses.yaml
+    - script: setup/fill-node.sh
+  checks:
+    - id: priorityclass-value
+      description: PriorityClass high-priority has the required value
+      weight: 2
+      type: jsonPath
+      ref: {kind: priorityclass, name: high-priority}
+      path: '{.value}'
+      equals: '749999'
+    - id: not-default
+      description: high-priority is not the default class
+      type: jsonPath
+      ref: {kind: priorityclass, name: high-priority}
+      path: '{.globalDefault}'
+      oneOf: ['', 'false']
+    - id: api-uses-class
+      description: deployment prod/api requests the class explicitly
+      type: jsonPath
+      ref: {kind: deployment, name: api, namespace: prod}
+      path: '{.spec.template.spec.priorityClassName}'
+      equals: high-priority
+    - id: api-ready
+      description: deployment prod/api is running
+      weight: 2
+      type: ready
+      ref: {kind: deployment, name: api, namespace: prod}
+      retry: {attempts: 8, interval: 4s}
+    - id: api-priority
+      description: the api pod carries the class's priority
+      type: jsonPath
+      ref: {kind: pod, namespace: prod, selector: app=api}
+      match: all
+      minItems: 1
+      path: '{.spec.priority}'
+      equals: '749999'
+      retry: {attempts: 6, interval: 4s}
+    - id: api-requests
+      description: api still requests the same CPU
+      type: jsonPath
+      ref: {kind: deployment, name: api, namespace: prod}
+      path: '{.spec.template.spec.containers[0].resources.requests.cpu}'
+      equals: 300m
+    - id: filler-unchanged
+      description: the batch deployment is untouched
+      type: jsonPath
+      ref: {kind: deployment, name: filler, namespace: batch}
+      path: '{.metadata.generation}/{.spec.replicas}/{.spec.template.spec.priorityClassName}'
+      equals: 1/4/tier-bronze
+    - id: tiers-kept
+      description: the existing PriorityClasses are all still there
+      type: count
+      ref: {kind: priorityclass, selector: group=tiers}
+      eq: 3
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [api-requests, filler-unchanged, tiers-kept]
+    timeout: 10m

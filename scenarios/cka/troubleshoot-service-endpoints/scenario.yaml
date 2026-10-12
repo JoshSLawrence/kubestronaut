@@ -1,0 +1,86 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: troubleshoot-service-endpoints
+  title: Fix a Service with no working endpoints
+  domain: troubleshooting
+  difficulty: easy
+  tags: [service, endpoints, readiness]
+spec:
+  timeLimit: 10m
+  weight: 5
+  context: k8s-endpoints
+  namespaces: [store]
+  exclusive: false
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl get endpointslices` shows what a Service really points at."
+    - Pods that are not Ready are left out of the endpoints.
+    - "`kubectl describe pod` shows why a readiness probe fails."
+  setup:
+    - manifest: setup/store.yaml
+    - wait:
+        ref: {kind: pod, namespace: store, selector: app=client}
+        for: condition=Ready
+    - wait:
+        ref: {kind: deployment, name: checkout-legacy, namespace: store}
+        for: condition=Available
+  checks:
+    - id: endpoints-ready
+      description: the Service has exactly the 3 checkout pods as ready endpoints
+      weight: 3
+      type: script
+      path: checks/endpoints.sh
+      retry: {attempts: 6, interval: 4s}
+    - id: service-reachable
+      description: a client in the namespace reaches the Service on port 80
+      weight: 3
+      type: connectivity
+      from: {kind: pod, name: client, namespace: store}
+      to: checkout.store.svc.cluster.local:80
+      expect: allowed
+      retry: {attempts: 6, interval: 3s}
+    - id: probe-kept
+      description: the readiness probe is still an HTTP check
+      type: jsonPath
+      ref: {kind: deployment, name: checkout, namespace: store}
+      path: '{.spec.template.spec.containers[0].readinessProbe.httpGet.path}'
+      nonEmpty: true
+    - id: probe-port
+      description: the readiness probe still targets the application
+      type: jsonPath
+      ref: {kind: deployment, name: checkout, namespace: store}
+      path: '{.spec.template.spec.containers[0].readinessProbe.httpGet.port}'
+      oneOf: ['8080', http]
+    - id: app-port
+      description: the application still listens on its original port
+      type: jsonPath
+      ref: {kind: deployment, name: checkout, namespace: store}
+      path: '{.spec.template.spec.containers[0].args[*]}'
+      matches: '(^| )--http-port[= ]8080( |$)'
+    - id: pod-labels
+      description: the checkout pods keep their labels
+      type: jsonPath
+      ref: {kind: deployment, name: checkout, namespace: store}
+      path: '{.spec.template.metadata.labels.app}/{.spec.template.metadata.labels.tier}'
+      equals: checkout/checkout
+    - id: deployment-ready
+      description: deployment store/checkout is fully rolled out
+      type: ready
+      ref: {kind: deployment, name: checkout, namespace: store}
+      minReady: 3
+      retry: {attempts: 6, interval: 4s}
+    - id: legacy-untouched
+      description: checkout-legacy was not changed
+      type: jsonPath
+      ref: {kind: deployment, name: checkout-legacy, namespace: store}
+      path: '{.metadata.generation}/{.status.readyReplicas}'
+      equals: 1/2
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [probe-kept, app-port, pod-labels, legacy-untouched]
+    timeout: 10m

@@ -1,0 +1,92 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: deployment-rollout-rollback
+  title: Roll back a failed rollout and tune the strategy
+  domain: workloads-scheduling
+  difficulty: easy
+  tags: [deployment, rollout]
+spec:
+  timeLimit: 8m
+  weight: 4
+  context: k8s-rollout
+  namespaces: [web]
+  exclusive: false
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubectl rollout history` lists the revisions; `kubectl rollout undo`
+      returns to the previous one."
+    - The rolling update settings live under `spec.strategy.rollingUpdate`.
+    - Every change to the pod template starts another rollout, so wait for it
+      to finish before you grade.
+  setup:
+    - manifest: setup/frontend.yaml
+    - wait:
+        ref: {kind: deployment, name: frontend, namespace: web}
+        for: condition=Available
+    - script: setup/break-rollout.sh
+  checks:
+    - id: image-working
+      description: deployment web/frontend runs a working image
+      type: jsonPath
+      ref: {kind: deployment, name: frontend, namespace: web}
+      path: '{.spec.template.spec.containers[0].image}'
+      equals: registry.k8s.io/e2e-test-images/agnhost:2.61
+    - id: revision-advanced
+      description: the existing deployment was updated rather than replaced
+      type: jsonPath
+      ref: {kind: deployment, name: frontend, namespace: web}
+      path: '{.metadata.annotations.deployment\.kubernetes\.io/revision}'
+      gte: 3
+    - id: not-replaced
+      description: the original deployment object is still in place
+      type: script
+      path: checks/not-recreated.sh
+    - id: replicas
+      description: the deployment is set to 5 replicas
+      type: jsonPath
+      ref: {kind: deployment, name: frontend, namespace: web}
+      path: '{.spec.replicas}'
+      equals: '5'
+    - id: rolled-out
+      description: all 5 replicas are ready and the rollout is complete
+      weight: 2
+      type: ready
+      ref: {kind: deployment, name: frontend, namespace: web}
+      minReady: 5
+      retry: {attempts: 15, interval: 4s}
+    - id: strategy-type
+      description: the deployment uses a rolling update
+      type: jsonPath
+      ref: {kind: deployment, name: frontend, namespace: web}
+      path: '{.spec.strategy.type}'
+      equals: RollingUpdate
+    - id: max-unavailable
+      description: a rollout never takes a ready pod away
+      type: jsonPath
+      ref: {kind: deployment, name: frontend, namespace: web}
+      path: '{.spec.strategy.rollingUpdate.maxUnavailable}'
+      matches: '^(0|1?[0-9]%)$'
+    - id: max-surge
+      description: a rollout creates at most one extra pod
+      type: jsonPath
+      ref: {kind: deployment, name: frontend, namespace: web}
+      path: '{.spec.strategy.rollingUpdate.maxSurge}'
+      matches: '^(1|([1-9]|1[0-9]|20)%)$'
+    - id: requests
+      description: every running frontend pod has the requested resources
+      weight: 2
+      type: jsonPath
+      ref: {kind: pod, namespace: web, selector: app=frontend}
+      match: all
+      path: '{.spec.containers[*].resources.requests.cpu}/{.spec.containers[*].resources.requests.memory}'
+      equals: 50m/64Mi
+      retry: {attempts: 15, interval: 4s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [strategy-type, not-replaced]
+    timeout: 10m
