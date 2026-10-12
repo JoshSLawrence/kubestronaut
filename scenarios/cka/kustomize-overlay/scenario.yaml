@@ -1,0 +1,86 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: kustomize-overlay
+  title: Install metrics-server with a Kustomize overlay
+  domain: cluster-architecture
+  difficulty: medium
+  tags: [kustomize, metrics-server]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-kustomize
+  exclusive: true
+  cluster:
+    workers: 1
+  images:
+    - registry.k8s.io/metrics-server/metrics-server:v0.9.0
+  prompt: prompt.md
+  hints:
+    - "`kubectl kustomize <dir>` prints what a directory builds, without
+      applying it. Check it before you apply."
+    - Labels that are added to selectors cannot be changed on a deployment
+      later, and break its Service.
+  setup:
+    - script: setup/base.sh
+  checks:
+    - id: base-untouched
+      description: the files in the base directory are exactly as they were
+      weight: 2
+      type: script
+      path: checks/base-untouched.sh
+    - id: overlay-builds
+      description: the overlay builds, and everything it produces carries the label
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        out=$(kubectl kustomize /opt/kustomize/metrics-server/overlays/lab)
+        objects=$(grep -c '^kind:' <<<"$out")
+        labelled=$(grep -c 'app.kubernetes.io/part-of: monitoring' <<<"$out")
+        test "$objects" -ge 9 && test "$labelled" -ge "$objects"
+    - id: overlay-has-flag
+      description: the overlay adds the argument to the container
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        out=$(kubectl kustomize /opt/kustomize/metrics-server/overlays/lab)
+        grep -Eq -- '^[[:space:]]*- --kubelet-insecure-tls[[:space:]]*$' <<<"$out"
+    - id: installed-labels
+      description: every metrics-server object in the cluster carries the label
+      weight: 2
+      type: script
+      path: checks/labels.sh
+    - id: deploy-flag
+      description: the running metrics-server deployment has the argument
+      weight: 2
+      type: jsonPath
+      ref: {kind: deployment, name: metrics-server, namespace: kube-system}
+      path: '{.spec.template.spec.containers[0].args}'
+      contains: --kubelet-insecure-tls
+    - id: selectors-unchanged
+      description: neither the deployment's nor the Service's selector gained the label
+      weight: 2
+      type: script
+      path: checks/selectors.sh
+    - id: apiservice-available
+      description: the metrics API is available
+      type: jsonPath
+      ref: {kind: apiservice, name: v1beta1.metrics.k8s.io}
+      path: '{.status.conditions[?(@.type=="Available")].status}'
+      equals: 'True'
+      retry: {attempts: 10, interval: 5s}
+    - id: top-works
+      description: kubectl top nodes returns numbers
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      command: [kubectl, top, nodes]
+      retry: {attempts: 12, interval: 5s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [base-untouched]
+    timeout: 15m
