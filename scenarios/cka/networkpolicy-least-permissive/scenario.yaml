@@ -18,7 +18,8 @@ spec:
   hints:
     - Read each file before you apply it. A namespaceSelector alone matches
       every pod in the namespaces it selects.
-    - A selector and a port list in one rule are combined with AND.
+    - Within one rule, a namespaceSelector and a podSelector in the same
+      `from` entry are combined with AND.
   setup:
     - manifest: setup/workloads.yaml
     - wait:

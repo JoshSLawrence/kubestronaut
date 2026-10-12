@@ -66,7 +66,7 @@ spec:
               kubernetes.io/metadata.name: frontend
       ports:
         - protocol: TCP
-          port: 80
+          port: 8080
 YAML
 
 ks_log "copying the candidate policies to /root/netpol on controlplane"

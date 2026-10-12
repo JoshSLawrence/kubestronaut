@@ -11,8 +11,8 @@ kubectl apply -f /root/netpol/policy-b.yaml
 
 - `policy-a.yaml` allows every pod in every namespace on every port, so the
   look-alike in `other` and the `debug` pod get in.
-- `policy-c.yaml` allows the whole `frontend` namespace, but only port 80, so
-  the client cannot reach 8080.
+- `policy-c.yaml` allows the whole `frontend` namespace on 8080, so the
+  `debug` pod gets in too.
 - `policy-b.yaml` combines a namespace selector and a pod selector in one
   `from` entry (AND) and names port 8080 only. It is the only one that meets
   the requirement without allowing more.
