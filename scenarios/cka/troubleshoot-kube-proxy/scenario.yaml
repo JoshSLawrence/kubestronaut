@@ -35,19 +35,23 @@ spec:
     - script: setup/break-proxy.sh
       timeout: 5m
   checks:
-    - id: kube-proxy-ready
-      description: kube-proxy is running and stable on every node
-      weight: 2
+    - id: mode-unchanged
+      description: the kube-proxy mode in its ConfigMap is unchanged
       type: script
-      path: checks/proxy-stable.sh
-      retry: {attempts: 8, interval: 3s}
+      path: checks/mode-unchanged.sh
     - id: kube-proxy-config
-      description: kube-proxy reads its configuration from the ConfigMap volume
+      description: kube-proxy runs with its original configuration
       weight: 2
       type: jsonPath
       ref: {kind: daemonset, name: kube-proxy, namespace: kube-system}
       path: '{.spec.template.spec.containers[0].command[*]}'
       contains: --config=/var/lib/kube-proxy/config.conf
+    - id: kube-proxy-ready
+      description: kube-proxy is running and stable on every node
+      weight: 2
+      type: script
+      path: checks/proxy-stable.sh
+      retry: {attempts: 6, interval: 3s}
     - id: service-by-name
       description: a pod reaches Service shop/api by name
       weight: 2
@@ -58,7 +62,7 @@ spec:
       expect: allowed
       # A name that cannot be resolved takes about 20s to fail.
       timeout: 40s
-      retry: {attempts: 3, interval: 3s}
+      retry: {attempts: 2, interval: 3s}
     - id: service-by-ip
       description: a pod reaches Service shop/api by its cluster IP
       weight: 2
@@ -80,10 +84,6 @@ spec:
       shell: iptables-save -t nat | grep -c KUBE-SVC
       stdoutMatches: '^[1-9][0-9]*\s*$'
       retry: {attempts: 5, interval: 3s}
-    - id: mode-unchanged
-      description: the kube-proxy mode in its ConfigMap is unchanged
-      type: script
-      path: checks/mode-unchanged.sh
   solution:
     script: solution/solve.sh
     readme: solution/README.md
