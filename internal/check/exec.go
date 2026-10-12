@@ -22,7 +22,7 @@ func init() {
 			return nil, errors.New("node is required")
 		}
 		var err error
-		if c.argv, c.re, err = c.compile(); err != nil {
+		if c.argv, c.re, err = c.compile(false); err != nil {
 			return nil, err
 		}
 		return &c, nil
@@ -39,7 +39,7 @@ func init() {
 			return nil, errors.New("ref.name or ref.selector is required")
 		}
 		var err error
-		if c.argv, c.re, err = c.compile(); err != nil {
+		if c.argv, c.re, err = c.compile(true); err != nil {
 			return nil, err
 		}
 		return &c, nil
@@ -56,7 +56,24 @@ type Expect struct {
 	StdoutMatches  string   `json:"stdoutMatches"`
 }
 
-func (e Expect) compile() ([]string, *regexp.Regexp, error) {
+// podShellPrelude makes a pod's shell stop at the first failing command, like
+// the node's bash -e. pipefail is enabled where the shell has it (bash, busybox
+// ash, recent dash) and skipped where it does not.
+const podShellPrelude = `set -e; if (set -o pipefail) 2>/dev/null; then set -o pipefail; fi; eval "$1"`
+
+// shellArgv wraps a shell string so that a failing command anywhere in it
+// fails the check, not only the last one. On nodes that is bash with errexit
+// and pipefail. Pods may only have sh, so the script is passed as an argument
+// to a small wrapper; -u is left off in both so an unset variable is not an
+// error.
+func shellArgv(script string, pod bool) []string {
+	if pod {
+		return []string{"sh", "-c", podShellPrelude, "sh", script}
+	}
+	return []string{"bash", "-eo", "pipefail", "-c", script}
+}
+
+func (e Expect) compile(pod bool) ([]string, *regexp.Regexp, error) {
 	var argv []string
 	switch {
 	case len(e.Command) > 0 && e.Shell != "":
@@ -64,7 +81,7 @@ func (e Expect) compile() ([]string, *regexp.Regexp, error) {
 	case len(e.Command) > 0:
 		argv = e.Command
 	case e.Shell != "":
-		argv = []string{"bash", "-c", e.Shell}
+		argv = shellArgv(e.Shell, pod)
 	default:
 		return nil, nil, errors.New("command or shell is required")
 	}

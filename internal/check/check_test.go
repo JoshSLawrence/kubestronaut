@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -340,7 +341,7 @@ func TestNodeExec(t *testing.T) {
 		t.Fatalf("exec target: %+v", last)
 	}
 	shellCall := b.Execs[6]
-	if strings.Join(shellCall.Argv, " ") != "bash -c echo hi" {
+	if strings.Join(shellCall.Argv, " ") != "bash -eo pipefail -c echo hi" {
 		t.Fatalf("shell argv: %v", shellCall.Argv)
 	}
 	b.ExecFunc = func(_, _ string, _ []string) (execx.Result, error) { return execx.Result{}, errors.New("no node") }
@@ -720,5 +721,40 @@ func TestValidate(t *testing.T) {
 	errs := Validate(s)
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "cka/x: checks[1] (bad)") {
 		t.Fatalf("errs: %v", errs)
+	}
+}
+
+// Shell checks must fail on a failing command anywhere in the script, not only
+// the last line. The wrapper is run with the local shells, which is what the
+// nodes (bash) and the pods (sh) provide.
+func TestShellChecksStopAtTheFirstFailure(t *testing.T) {
+	cases := []struct {
+		name, script string
+		wantOK       bool
+	}{
+		{"all pass", "true\ntrue\necho ok", true},
+		{"failing middle line", "true\nfalse\necho ok", false},
+		{"failing grep mid-script", "echo a | grep -q zzz\necho ok", false},
+		{"failure inside a pipeline", "false | cat\necho ok", false},
+		{"tested failure is fine", "if ! false; then echo fine; fi\n! false\ntrue", true},
+		{"unset variable is allowed", "echo \"$KS_UNSET_VAR\"\ntrue", true},
+	}
+	for _, c := range cases {
+		t.Setenv("KS_TEST_SCRIPT", c.script)
+		// The same wrappers shellArgv builds, with the script from the
+		// environment so the arguments stay constant.
+		node := exec.Command("bash", "-eo", "pipefail", "-c", `eval "$KS_TEST_SCRIPT"`).Run()
+		pod := exec.Command("sh", "-c", podShellPrelude, "sh", `eval "$KS_TEST_SCRIPT"`).Run()
+		for name, err := range map[string]error{"node": node, "pod": pod} {
+			if ok := err == nil; ok != c.wantOK {
+				t.Errorf("%s %s: passed=%v, want %v (err %v)", name, c.name, ok, c.wantOK, err)
+			}
+		}
+	}
+	if got := shellArgv("x", false); strings.Join(got, " ") != "bash -eo pipefail -c x" {
+		t.Errorf("node argv %v", got)
+	}
+	if got := shellArgv("x", true); got[0] != "sh" || got[len(got)-1] != "x" || got[2] != podShellPrelude {
+		t.Errorf("pod argv %v", got)
 	}
 }

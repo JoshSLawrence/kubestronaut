@@ -2,19 +2,19 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
-      # Vendored files under a scenario's files/ must stay byte for byte as
-      # upstream published them: their sha256 is pinned in vendor.lock, and a
-      # chart's templates are not valid YAML.
+      # Vendored files must stay byte for byte as upstream published them: their
+      # sha256 is pinned in scenarios/cka/vendor.lock.
       - id: trailing-whitespace
-        exclude: ^scenarios/.+/files/
+        exclude: ^scenarios/cka/(hpa-autoscale|monitor-resource-usage)/files/metrics-server\.yaml$|^scenarios/cka/kustomize-overlay/files/base/components\.yaml$|^scenarios/cka/crd-operator-cert-manager/files/cert-manager\.yaml$
       - id: end-of-file-fixer
-        exclude: ^scenarios/.+/files/
+        exclude: ^scenarios/cka/(hpa-autoscale|monitor-resource-usage)/files/metrics-server\.yaml$|^scenarios/cka/kustomize-overlay/files/base/components\.yaml$|^scenarios/cka/crd-operator-cert-manager/files/cert-manager\.yaml$
+      # A chart's templates contain template syntax and are not valid YAML.
       - id: check-yaml
         args: [--allow-multiple-documents]
-        exclude: ^scenarios/.+/files/
-      # The cert-manager manifest is about 1 MB.
+        exclude: ^scenarios/.+/files/charts/[^/]+/templates/
+      # The cert-manager manifest is about 1 MB; the default limit is 500 KB.
       - id: check-added-large-files
-        args: [--maxkb=2048]
+        exclude: ^scenarios/cka/crd-operator-cert-manager/files/cert-manager\.yaml$
   - repo: local
     hooks:
       # Calling mise keeps hook tool versions identical to CI.

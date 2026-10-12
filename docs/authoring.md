@@ -247,7 +247,15 @@ built-in scenario must be listed in `knownKinds` in
 missing key is an empty string.
 
 Command expectations are `exitCode` (default 0), `stdoutContains` and
-`stdoutMatches`. `shell: "..."` runs under `bash -c`.
+`stdoutMatches`. `shell: "..."` runs under `bash -eo pipefail -c` on nodes
+and under `sh` with `set -e` (and `pipefail` where the shell has it) in pods:
+the first command that fails ends the script and fails the check, not only the
+last line. Plan for it: a command that may legitimately fail needs `|| true`
+or a place in an `if`, a pipeline fails when any stage fails (capture the
+output of `cmd | grep -q x` in a variable first, because `grep -q` closing
+the pipe early makes the writer fail), and `a && b` only fails the script
+when `b` fails, so put each assertion on its own line. Unset variables are
+not an error.
 
 `connectivity` execs `/agnhost connect` in the source pod (`probe: nc` uses
 `nc -z`), so source pods must run agnhost or busybox images. A `denied` check
