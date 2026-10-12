@@ -100,6 +100,17 @@ rendered with Go `text/template` before use:
 Scripts are not templated; they get environment variables instead. In YAML,
 quote template calls: `name: '{{node "node01"}}'`.
 
+#### Verbatim files
+
+Everything under the scenario's `files/` directory is copied as it is, even
+`.yaml` and `.json` files. Use it for content that has template syntax of its
+own, such as a Helm chart's `templates/*.yaml`, or that is vendored and must
+keep its checksum. Setup scripts push it to a node with `ks_copy_to`, for
+example `ks_copy_to controlplane files/charts /opt/charts`. The directory is
+deleted from the learner's scenario directory once setup has run. Go's
+`embed` skips files whose names start with `.` or `_`, so a chart cannot use
+`_helpers.tpl`.
+
 ### Setup steps
 
 Steps run in order and each has exactly one key.
