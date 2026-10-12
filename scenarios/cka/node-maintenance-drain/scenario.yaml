@@ -1,0 +1,111 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: node-maintenance-drain
+  title: Drain a node for maintenance
+  domain: cluster-architecture
+  difficulty: medium
+  tags: [drain, cordon, pdb, daemonset]
+spec:
+  timeLimit: 10m
+  weight: 5
+  context: k8s-drain
+  namespaces: [maint]
+  exclusive: true
+  cluster:
+    workers: 2
+  images:
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+    - busybox:1.38.0
+  prompt: prompt.md
+  hints:
+    - "`kubectl drain` refuses pods that no controller would recreate and pods
+      with local data unless you say so. Read what it tells you."
+    - Save what you cannot get back before you drain.
+  setup:
+    - manifest: setup/maint.yaml
+    - wait:
+        ref: {kind: deployment, name: web, namespace: maint}
+        for: condition=Available
+    - wait:
+        ref: {kind: deployment, name: cache, namespace: maint}
+        for: condition=Available
+    - wait:
+        ref: {kind: daemonset, name: node-agent, namespace: maint}
+        for: create
+    - wait:
+        ref: {kind: pod, name: scratch, namespace: maint}
+        for: condition=Ready
+    - script: setup/record.sh
+  checks:
+    - id: node01-cordoned
+      description: node01 accepts no new pods
+      type: jsonPath
+      ref: {kind: node, name: '{{node "node01"}}'}
+      path: '{.spec.unschedulable}'
+      equals: true
+    - id: no-maint-pods
+      description: no pod in maint except the DaemonSet's runs on node01
+      weight: 3
+      type: count
+      ref: {kind: pod, namespace: maint, selector: app!=node-agent, fieldSelector: 'spec.nodeName={{node "node01"}}'}
+      eq: 0
+      retry: {attempts: 10, interval: 3s}
+    - id: daemonset-ready
+      description: DaemonSet maint/node-agent is rolled out
+      type: ready
+      ref: {kind: daemonset, name: node-agent, namespace: maint}
+      retry: {attempts: 10, interval: 3s}
+    - id: web-ready
+      description: deployment maint/web has 3 available replicas
+      weight: 2
+      type: ready
+      ref: {kind: deployment, name: web, namespace: maint}
+      minReady: 3
+      retry: {attempts: 10, interval: 3s}
+    - id: cache-ready
+      description: deployment maint/cache is available
+      type: ready
+      ref: {kind: deployment, name: cache, namespace: maint}
+      retry: {attempts: 10, interval: 3s}
+    - id: pdb-unchanged
+      description: PodDisruptionBudget web-pdb still requires 2 available pods
+      type: jsonPath
+      ref: {kind: poddisruptionbudget, name: web-pdb, namespace: maint}
+      path: '{.spec.minAvailable}'
+      equals: 2
+    - id: protected-objects
+      description: the PodDisruptionBudget, the DaemonSet and the deployments are the original objects
+      weight: 2
+      type: script
+      path: checks/originals.sh
+    - id: scratch-running
+      description: pod maint/scratch is running
+      weight: 2
+      type: ready
+      ref: {kind: pod, name: scratch, namespace: maint}
+      retry: {attempts: 10, interval: 3s}
+    - id: scratch-moved
+      description: pod maint/scratch runs on a node other than node01
+      weight: 2
+      type: jsonPath
+      ref: {kind: pod, name: scratch, namespace: maint}
+      path: '{.spec.nodeName}'
+      notEquals: '{{node "node01"}}'
+    - id: scratch-same-spec
+      description: pod maint/scratch has its original image and command
+      type: script
+      path: checks/scratch-same-spec.sh
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution:
+      - daemonset-ready
+      - web-ready
+      - cache-ready
+      - pdb-unchanged
+      - protected-objects
+      - scratch-running
+      - scratch-same-spec
+    timeout: 12m
