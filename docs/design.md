@@ -1110,14 +1110,15 @@ depends = ["lint", "test", "validate"]
     and pull requests carrying the `e2e` label.
   - A matrix job builds the id list from
     `kubestronaut list --exam cka --json`.
-  - Per-scenario job: `timeout-minutes: 40`, which is more than the
-    scenario's `validation.timeout` (at most 20m) plus about 10m of tool
-    install and kind image pulls.
+  - Per-scenario job: `timeout-minutes: 55`, which is more than the
+    go test timeout (`KS_E2E_TIMEOUT: 45m`), itself more than the scenario's
+    `validation.timeout` (at most 30m) plus about 10m of tool install and
+    kind image pulls.
   - Step: `mise run e2e` with `KS_E2E_SCENARIOS=${{ matrix.id }}`. kind
     comes from mise; Docker is preinstalled on the runner.
 - **Timeout rule:** each job timeout must be greater than the tool timeout
-  plus setup. Unit job 15m > go test 5m; lint 15m > golangci 5m; e2e 40m >
-  20m.
+  plus setup. Unit job 15m > go test 5m; lint 15m > golangci 5m; e2e job 55m >
+  go test 45m > validation 30m.
 
 ## 9. Phased implementation plan
 

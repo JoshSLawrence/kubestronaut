@@ -42,10 +42,11 @@ jobs:
   e2e:
     needs: matrix
     runs-on: ubuntu-24.04
-    # Must exceed the longest validation.timeout (20m) plus about 10m for tool
-    # install and kind node image pulls, otherwise the runner kills the test
-    # before it can delete its cluster.
-    timeout-minutes: 40
+    # Must exceed the go test timeout (KS_E2E_TIMEOUT below), which in turn
+    # exceeds the longest validation.timeout (30m, the kubeadm upgrade
+    # scenario) plus about 10m for tool install and kind node image pulls.
+    # Otherwise the runner kills the test before it can delete its cluster.
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       matrix:
@@ -58,11 +59,11 @@ jobs:
       - run: mise run e2e
         env:
           KS_E2E_SCENARIOS: ${{ matrix.id }}
-          # Keeps go test's own timeout below the 40 minute job timeout so the
+          # Keeps go test's own timeout below the 55 minute job timeout so the
           # failure is reported by go test with its goroutine dump rather than
           # as a killed job. It does not guarantee cleanup: a go test timeout
           # panics the test binary without running t.Cleanup, so a cluster can
           # be left behind (it is discarded with the runner). validation.timeout
-          # (at most 20m) ends a stuck scenario well before this limit and does
+          # (at most 30m) ends a stuck scenario well before this limit and does
           # clean up.
-          KS_E2E_TIMEOUT: 30m
+          KS_E2E_TIMEOUT: 45m
