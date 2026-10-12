@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -66,7 +67,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e := &env{run: &execx.Fake{}, be: fake.New()}
 	e.run.Respond([]string{"kubectl", "config", "view"}, execx.Result{Stdout: []byte("merged")}, nil)
-	e.app = &App{Home: t.TempDir(), Version: "test", Layers: layersOf(m), Backend: e.be, Runner: e.run, Binary: "/bin/ks"}
+	e.app = &App{Home: filepath.Join(t.TempDir(), "home"), Version: "test", Layers: layersOf(m), Backend: e.be, Runner: e.run, Binary: "/bin/ks"}
 	return e
 }
 
@@ -139,7 +140,7 @@ func TestSessionFlow(t *testing.T) {
 		t.Fatalf("second start: %d %s", code, errOut)
 	}
 	_, out, _ = e.exec("", "env")
-	if !strings.HasPrefix(out, "export KUBECONFIG=") || !strings.HasSuffix(strings.TrimSpace(out), "kubeconfig") {
+	if !strings.HasPrefix(out, "export KUBECONFIG=") || !strings.Contains(out, "\nexport KUBECACHEDIR=") || !strings.HasSuffix(strings.TrimSpace(out), "cache") {
 		t.Fatalf("env: %q", out)
 	}
 	_, out, _ = e.exec("", "status")

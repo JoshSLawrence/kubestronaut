@@ -34,7 +34,8 @@ kubectl get nodes
 
 `start` prints the task and an `export KUBECONFIG=...` line. kubestronaut never
 reads or writes `~/.kube/config`; it keeps its own kubeconfig under
-`~/.kubestronaut`.
+`~/.kubestronaut`. `kubestronaut env` and `shell` also set `KUBECACHEDIR` to
+`~/.kubestronaut/cache`, so kubectl's discovery cache stays out of `~/.kube`.
 
 ## Usage
 
@@ -45,7 +46,7 @@ reads or writes `~/.kube/config`; it keeps its own kubeconfig under
 | `start <id> [--k8s-version v] [--node-image img] [--force] [--keep-on-failure]` | Create cluster, run setup, print the task |
 | `status` | Show the active session |
 | `prompt` | Print the task again |
-| `env` | Print `export KUBECONFIG=...` for `eval` |
+| `env` | Print `export KUBECONFIG=...` and `KUBECACHEDIR` for `eval` |
 | `shell` | Start `$SHELL` with `KUBECONFIG` set |
 | `ssh <node> [-- cmd...]` | Shell or command on `controlplane`, `node01`, ... |
 | `hint [--all]` | Show the next hint (counted in the grade) |
@@ -101,7 +102,8 @@ mise run e2e       # real clusters; takes several minutes
 a cluster, requires every check to fail, runs the reference solution, and
 requires a 100% grade. Checks that legitimately pass before the solution (for
 example "must stay denied" checks) are listed in
-`validation.passBeforeSolution`. Narrow it with `KS_E2E_SCENARIOS=cka/rbac-dev-access`.
+`validation.passBeforeSolution`. Narrow the run with
+`KS_E2E_SCENARIOS=cka/rbac-dev-access`.
 
 Run `pre-commit install` to get the same checks on every commit.
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -109,7 +110,9 @@ func (a *App) envCmd() *cobra.Command {
 			if _, err := l.Status(); err != nil {
 				return err
 			}
-			fprintf(cmd.OutOrStdout(), "export KUBECONFIG=%s\n", l.Store.KubeconfigPath())
+			// KUBECACHEDIR keeps kubectl's discovery cache out of ~/.kube.
+			fprintf(cmd.OutOrStdout(), "export KUBECONFIG=%s\nexport KUBECACHEDIR=%s\n",
+				l.Store.KubeconfigPath(), filepath.Join(l.Store.Root, "cache"))
 			return nil
 		},
 	}
@@ -171,7 +174,7 @@ func (a *App) shellCmd() *cobra.Command {
 			if sh == "" {
 				return errors.New("$SHELL is not set: export SHELL or use `eval \"$(kubestronaut env)\"` instead")
 			}
-			return a.runner().Interactive(cmd.Context(), execxCmd(sh, nil, "KUBECONFIG="+l.Store.KubeconfigPath()))
+			return a.runner().Interactive(cmd.Context(), execxCmd(sh, nil, "KUBECONFIG="+l.Store.KubeconfigPath(), "KUBECACHEDIR="+filepath.Join(l.Store.Root, "cache")))
 		},
 	}
 }

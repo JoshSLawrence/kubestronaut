@@ -140,6 +140,30 @@ spec:
       verb: update
       resource: nodes
       allowed: false
+    - id: no-delete-statefulsets
+      description: deployer cannot delete statefulsets in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: delete
+      resource: statefulsets.apps
+      namespace: dev
+      allowed: false
+    - id: no-deletecollection
+      description: deployer cannot delete deployments in bulk in dev
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: deletecollection
+      resource: deployments.apps
+      namespace: dev
+      allowed: false
+    - id: no-list-pods-default
+      description: deployer cannot list pods in default
+      type: canI
+      as: system:serviceaccount:dev:deployer
+      verb: list
+      resource: pods
+      namespace: default
+      allowed: false
     - id: not-cluster-admin
       description: deployer is not bound to cluster-admin
       type: script
@@ -157,5 +181,8 @@ spec:
       - no-pod-exec
       - no-delete-nodes
       - no-update-nodes
+      - no-delete-statefulsets
+      - no-deletecollection
+      - no-list-pods-default
       - not-cluster-admin
     timeout: 10m

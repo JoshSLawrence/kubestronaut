@@ -457,7 +457,9 @@ func TestConnectivity(t *testing.T) {
 	// nc: a name that does not resolve must not read as "denied".
 	k.ExecFunc = func(_, _, _ string, a []string) (execx.Result, error) {
 		if a[0] == "nslookup" {
-			return execx.Result{ExitCode: 1, Stdout: []byte("** server can't find")}, nil
+			// "not found" in ordinary output is a resolution failure, not a
+			// missing binary.
+			return execx.Result{ExitCode: 1, Stdout: []byte("** server can't find x: host not found")}, nil
 		}
 		return execx.Result{ExitCode: 1}, nil
 	}
@@ -466,7 +468,7 @@ func TestConnectivity(t *testing.T) {
 	}
 	k.ExecFunc = func(_, _, _ string, a []string) (execx.Result, error) {
 		if a[0] == "nslookup" {
-			return execx.Result{ExitCode: 127, Stderr: []byte("nslookup: not found")}, nil
+			return execx.Result{ExitCode: 126, Stderr: []byte("exec: \"nslookup\": executable file not found in $PATH")}, nil
 		}
 		return execx.Result{ExitCode: 1, Stderr: []byte("nc: bad address 'api.shop.svc'")}, nil
 	}

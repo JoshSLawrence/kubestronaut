@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -53,7 +54,10 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 }
 
 func TestLoadRejectsCorruptAndFutureVersions(t *testing.T) {
-	s := &Store{Root: t.TempDir()}
+	s := &Store{Root: filepath.Join(t.TempDir(), "home")}
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(s.statePath(), []byte("{nope"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +73,7 @@ func TestLoadRejectsCorruptAndFutureVersions(t *testing.T) {
 }
 
 func TestClear(t *testing.T) {
-	s := &Store{Root: t.TempDir()}
+	s := &Store{Root: filepath.Join(t.TempDir(), "home")}
 	if err := s.Clear(); err != nil {
 		t.Fatalf("clearing nothing must succeed: %v", err)
 	}
@@ -85,7 +89,7 @@ func TestClear(t *testing.T) {
 }
 
 func TestLockIsExclusive(t *testing.T) {
-	s := &Store{Root: t.TempDir()}
+	s := &Store{Root: filepath.Join(t.TempDir(), "home")}
 	unlock, err := s.Lock()
 	if err != nil {
 		t.Fatal(err)
@@ -124,5 +128,68 @@ func TestInitFailure(t *testing.T) {
 	}
 	if _, err := s.Lock(); err == nil {
 		t.Fatal("want error")
+	}
+}
+
+func TestInitSafety(t *testing.T) {
+	base := t.TempDir()
+	mode := func(p string) os.FileMode {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fi.Mode().Perm()
+	}
+
+	fresh := filepath.Join(base, "fresh")
+	if err := (&Store{Root: fresh}).Init(); err != nil || mode(fresh) != 0o700 {
+		t.Fatalf("new dir: %v mode %v", err, mode(fresh))
+	}
+	// Idempotent on the directory it created.
+	if err := (&Store{Root: fresh}).Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	open := filepath.Join(base, "open")
+	if err := os.Mkdir(open, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Chmod(open, 0o750); err != nil { // defeat the umask
+		t.Fatal(err)
+	}
+	err := (&Store{Root: open}).Init()
+	if err == nil || !strings.Contains(err.Error(), "chmod 700") || mode(open) != 0o750 {
+		t.Fatalf("accessible dir must be refused and left alone: %v mode %v", err, mode(open))
+	}
+
+	target := filepath.Join(base, "target")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Store{Root: link}).Init(); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	file := filepath.Join(base, "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Store{Root: file}).Init(); err == nil {
+		t.Fatal("a file is not a state dir")
+	}
+
+	for _, bad := range []string{"/", os.TempDir()} {
+		if err := (&Store{Root: bad}).Init(); err == nil || !strings.Contains(err.Error(), "dedicated") {
+			t.Fatalf("%s must be refused: %v", bad, err)
+		}
+	}
+	if h, err := os.UserHomeDir(); err == nil {
+		if err := (&Store{Root: h}).Init(); err == nil {
+			t.Fatal("$HOME must be refused")
+		}
 	}
 }

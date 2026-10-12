@@ -102,7 +102,9 @@ func (g *Grader) Grade(ctx context.Context, s *scenario.Scenario) Report {
 	if rep.Possible > 0 {
 		rep.Percent = 100 * float64(rep.Earned) / float64(rep.Possible)
 	}
-	rep.Passed = rep.Possible > 0 && rep.Percent >= float64(rep.PassPercent)
+	// Integer arithmetic: a float comparison could misjudge a score that sits
+	// exactly on the pass mark.
+	rep.Passed = rep.Possible > 0 && rep.Earned*100 >= rep.PassPercent*rep.Possible
 	return rep
 }
 

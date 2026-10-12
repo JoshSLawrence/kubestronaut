@@ -515,3 +515,26 @@ func TestNodeBoundsCheck(t *testing.T) {
 		t.Fatal("want error for inconsistent state")
 	}
 }
+
+func TestSetupCleanupKeepsCheckScripts(t *testing.T) {
+	f := newFixture(t)
+	s := f.lab.Catalog.Scenarios[0]
+	// Bypass validation to prove the cleanup itself is safe.
+	s.Spec.Setup = append(s.Spec.Setup, scenario.SetupStep{Script: ".", Timeout: scenario.Duration(time.Minute)})
+	s.Spec.Setup[0].Script = "setup"
+	var raw = []byte(`{"type":"script","path":"setup/check.sh"}`)
+	s.Spec.Checks = append(s.Spec.Checks, scenario.CheckSpec{CheckBase: scenario.CheckBase{ID: "scr", Type: "script"}, Raw: raw})
+	st := &session.State{ID: "x"}
+	dir := f.lab.scenarioDir("x", s)
+	if err := os.MkdirAll(filepath.Join(dir, "setup"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(dir, "setup", "check.sh")
+	if err := os.WriteFile(keep, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.lab.removeSetupFiles(st, s)
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("check script was deleted: %v", err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"path"
 	"regexp"
 	"strings"
 
@@ -67,6 +68,7 @@ func (s *Scenario) Validate(p *Pack) []error {
 	errs = append(errs, s.validatePrompt()...)
 	errs = append(errs, s.validateSetup()...)
 	errs = append(errs, s.validateChecks()...)
+	errs = append(errs, s.validateSetupPaths()...)
 	errs = append(errs, s.validateSolution()...)
 	errs = append(errs, s.validateNodes()...)
 	return errs
@@ -232,6 +234,53 @@ func (c *Catalog) Validate() []error {
 	errs := append([]error(nil), c.Problems...)
 	for _, s := range c.Scenarios {
 		errs = append(errs, s.Validate(c.Packs[s.Pack])...)
+	}
+	return errs
+}
+
+// CheckScriptPaths lists the files that script checks run, cleaned.
+func (s *Scenario) CheckScriptPaths() []string {
+	var out []string
+	for _, c := range s.Spec.Checks {
+		if c.Type != "script" {
+			continue
+		}
+		var peek struct {
+			Path string `json:"path"`
+		}
+		if json.Unmarshal(c.Raw, &peek) == nil && peek.Path != "" {
+			out = append(out, path.Clean(peek.Path))
+		}
+	}
+	return out
+}
+
+// Overlaps reports whether a and b are the same path or one contains the other.
+func Overlaps(a, b string) bool {
+	a, b = path.Clean(a), path.Clean(b)
+	return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/") || a == "." || b == "."
+}
+
+// validateSetupPaths guards the cleanup that deletes setup files after setup:
+// it must never be able to take a script check's file, or the whole directory.
+func (s *Scenario) validateSetupPaths() []error {
+	var errs []error
+	scripts := s.CheckScriptPaths()
+	for i, st := range s.Spec.Setup {
+		for _, p := range []string{st.Script, st.Manifest} {
+			if p == "" {
+				continue
+			}
+			if c := path.Clean(p); c == "." || c == ".." || strings.HasPrefix(c, "../") || path.IsAbs(c) {
+				errs = append(errs, fmt.Errorf("%s: setup[%d]: path %q must be inside the scenario directory and not the directory itself", s.ID, i, p))
+				continue
+			}
+			for _, sc := range scripts {
+				if Overlaps(p, sc) {
+					errs = append(errs, fmt.Errorf("%s: setup[%d]: path %q overlaps the script check file %q, which setup cleanup would delete", s.ID, i, p, sc))
+				}
+			}
+		}
 	}
 	return errs
 }

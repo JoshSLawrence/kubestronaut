@@ -122,3 +122,20 @@ func TestGradeTimeout(t *testing.T) {
 		t.Fatalf("must not pass: %+v", rep)
 	}
 }
+
+func TestPassMarkBoundary(t *testing.T) {
+	// 2 of 3 is 66.66...%: below a 67 mark, above a 66 mark.
+	cs := checks(t, exists("a", "here", 0), exists("b", "here", 0), exists("c", "gone", 0))
+	g := &Grader{Env: env()}
+	if rep := g.Grade(context.Background(), scen(67, cs)); rep.Passed {
+		t.Fatalf("66.67%% must not pass a 67%% mark: %+v", rep)
+	}
+	if rep := g.Grade(context.Background(), scen(66, cs)); !rep.Passed {
+		t.Fatalf("66.67%% must pass a 66%% mark: %+v", rep)
+	}
+	// Exactly on the mark: 1 of 4 against 25.
+	four := checks(t, exists("a", "here", 0), exists("b", "gone", 0), exists("c", "gone", 0), exists("d", "gone", 0))
+	if rep := g.Grade(context.Background(), scen(25, four)); !rep.Passed {
+		t.Fatalf("exactly 25%% must pass: %+v", rep)
+	}
+}

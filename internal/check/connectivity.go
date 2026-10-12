@@ -127,7 +127,7 @@ func (c *connectivity) checkResolves(ctx context.Context, env *Env) error {
 		return nil
 	case isKubectlFailure(res):
 		return fmt.Errorf("could not exec in %s: %s", describe(c.From), strings.TrimSpace(string(res.Stderr)))
-	case res.ExitCode == 127 || strings.Contains(out, "not found"):
+	case res.ExitCode == 126 || res.ExitCode == 127 || strings.Contains(out, "executable file not found"):
 		return nil
 	}
 	return fmt.Errorf("host %s did not resolve: %s", c.host, strings.TrimSpace(out))

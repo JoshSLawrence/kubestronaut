@@ -96,18 +96,54 @@ func (s *Store) SessionDir(id string) string { return filepath.Join(s.Root, "ses
 // editing a kubeconfig, so the user's own files stay untouched.
 func (s *Store) ScratchKubeconfig() string { return filepath.Join(s.Root, "scratch.kubeconfig") }
 
-// Init creates the home directory with owner-only permissions.
+// Init makes sure the home directory exists and is private. Only a directory
+// created here is ever chmodded: an existing one (a user's own --home such as
+// a shared temp dir) is validated and refused if unsafe, never modified.
 func (s *Store) Init() error {
-	if err := os.MkdirAll(s.Root, 0o700); err != nil {
-		return fmt.Errorf("create state dir %s: %w", s.Root, err)
+	fi, err := os.Lstat(s.Root)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := s.refuseSystemDir(); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(s.Root, 0o700); err != nil {
+			return fmt.Errorf("create state dir %s: %w", s.Root, err)
+		}
+		return nil
 	}
-	// MkdirAll leaves an existing directory alone, so tighten it explicitly.
-	d, err := os.Open(s.Root)
 	if err != nil {
+		return fmt.Errorf("state dir %s: %w", s.Root, err)
+	}
+	if err := s.refuseSystemDir(); err != nil {
 		return err
 	}
-	defer func() { _ = d.Close() }()
-	return d.Chmod(0o700)
+	switch {
+	case fi.Mode()&os.ModeSymlink != 0:
+		return fmt.Errorf("state dir %s is a symlink: choose a real, dedicated directory", s.Root)
+	case !fi.IsDir():
+		return fmt.Errorf("state dir %s is not a directory: choose another --home", s.Root)
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+		return fmt.Errorf("state dir %s is owned by another user: choose a directory you own", s.Root)
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("state dir %s is group/world accessible: run `chmod 700 %s` or choose a dedicated directory", s.Root, s.Root)
+	}
+	return nil
+}
+
+// refuseSystemDir rejects directories that are shared by design.
+func (s *Store) refuseSystemDir() error {
+	root := filepath.Clean(s.Root)
+	forbidden := []string{"/", os.TempDir()}
+	if h, err := os.UserHomeDir(); err == nil {
+		forbidden = append(forbidden, h)
+	}
+	for _, f := range forbidden {
+		if root == filepath.Clean(f) {
+			return fmt.Errorf("refusing to use %s as the state dir: choose a dedicated directory such as ~/.kubestronaut", s.Root)
+		}
+	}
+	return nil
 }
 
 // Lock takes an exclusive lock so two commands cannot change state at once.

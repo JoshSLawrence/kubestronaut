@@ -44,6 +44,14 @@ spec:
       to: api.shop.svc.cluster.local:8080
       expect: allowed
       retry: {attempts: 3, interval: 3s}
+    - id: debug-still-reachable
+      description: other workloads in shop keep accepting traffic
+      weight: 2
+      type: connectivity
+      from: {kind: pod, name: intruder, namespace: other}
+      to: debug.shop.svc.cluster.local:8080
+      expect: allowed
+      retry: {attempts: 3, interval: 3s}
     - id: debug-denied
       description: shop/debug cannot reach api
       weight: 2
@@ -80,5 +88,5 @@ spec:
     script: solution/solve.sh
     readme: solution/README.md
   validation:
-    passBeforeSolution: [api-ready, web-allowed]
+    passBeforeSolution: [api-ready, web-allowed, debug-still-reachable]
     timeout: 10m

@@ -376,3 +376,24 @@ func TestNamesMustBeKebab(t *testing.T) {
 		t.Fatalf("errs: %v", errs)
 	}
 }
+
+func TestSetupPathsMustNotCoverCheckScripts(t *testing.T) {
+	check := "    - id: scr\n      description: s\n      type: script\n      path: setup/check.sh\n"
+	y := strings.Replace(goodScenario, "  checks:\n", "  checks:\n"+check, 1)
+	y = strings.Replace(y, "manifest: setup/m.yaml", "manifest: setup", 1)
+	f := goodFS()
+	f["cka/demo/scenario.yaml"] = &fstest.MapFile{Data: []byte(y)}
+	f["cka/demo/setup/check.sh"] = &fstest.MapFile{Data: []byte("true")}
+	if errs := LoadCatalog(f).Validate(); !anyContains(errs, "overlaps the script check") {
+		t.Fatalf("errs: %v", errs)
+	}
+	dot := strings.Replace(goodScenario, "script: setup/s.sh", "script: .", 1)
+	g := goodFS()
+	g["cka/demo/scenario.yaml"] = &fstest.MapFile{Data: []byte(dot)}
+	if errs := LoadCatalog(g).Validate(); !anyContains(errs, "not the directory itself") {
+		t.Fatalf("errs: %v", errs)
+	}
+	if !Overlaps("setup", "setup/a.sh") || !Overlaps("a/b", "a/b") || Overlaps("setup/a.sh", "setup/b.sh") || !Overlaps(".", "x") {
+		t.Fatal("Overlaps")
+	}
+}

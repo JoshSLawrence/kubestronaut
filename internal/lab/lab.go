@@ -232,9 +232,21 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 // scenario directory once they ran, because they describe the fault.
 func (l *Lab) removeSetupFiles(st *session.State, s *scenario.Scenario) {
 	dir := l.scenarioDir(st.ID, s)
+	protected := s.CheckScriptPaths()
 	for _, step := range s.Spec.Setup {
 		for _, p := range []string{step.Script, step.Manifest} {
-			if p != "" && filepath.IsLocal(p) {
+			// Defence in depth: validation rejects these, but a wrong path
+			// here would delete the learner's whole directory.
+			if p == "" || !filepath.IsLocal(p) || filepath.Clean(p) == "." {
+				continue
+			}
+			keep := false
+			for _, c := range protected {
+				if scenario.Overlaps(p, c) {
+					keep = true
+				}
+			}
+			if !keep {
 				_ = os.RemoveAll(filepath.Join(dir, p))
 			}
 		}
