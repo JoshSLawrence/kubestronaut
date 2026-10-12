@@ -11,7 +11,7 @@ spec:
   weight: 6
   context: k8s-sched
   namespaces: [ml]
-  exclusive: false
+  exclusive: true
   cluster:
     workers: 2
   images:
@@ -58,8 +58,8 @@ spec:
       description: the pod template carries a toleration for the node's taint
       type: jsonPath
       ref: {kind: deployment, name: trainer, namespace: ml}
-      path: '{.spec.template.spec.tolerations[*].key}'
-      contains: dedicated
+      path: '{range .spec.template.spec.tolerations[*]}{.key}:{.operator};{end}'
+      matches: '(^|;)(dedicated:|:Exists)'
     - id: taint-kept
       description: the GPU node is still tainted
       type: jsonPath
