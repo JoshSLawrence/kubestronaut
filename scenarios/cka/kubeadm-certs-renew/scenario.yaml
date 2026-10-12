@@ -1,0 +1,88 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: kubeadm-certs-renew
+  title: Check and renew control-plane certificates
+  domain: cluster-architecture
+  difficulty: medium
+  tags: [kubeadm, certificates, pki]
+spec:
+  timeLimit: 10m
+  weight: 5
+  context: k8s-certs
+  exclusive: true
+  prompt: prompt.md
+  hints:
+    - "`kubeadm certs --help` lists what can be checked and renewed."
+    - The API server reads its certificates once, when it starts. Static pods
+      are restarted by changing their manifest or stopping the container.
+  setup:
+    - script: setup/record.sh
+  checks:
+    - id: report-written
+      description: /root/cert-expiry.txt is a kubeadm expiration report covering every certificate
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      # Compare with what kubeadm lists now, so a report written by hand or
+      # cut short does not pass. Names are the lowercase first column.
+      shell: |
+        test -s /root/cert-expiry.txt
+        grep -q '^CERTIFICATE AUTHORITY' /root/cert-expiry.txt
+        names=$(kubeadm certs check-expiration 2>/dev/null | awk '/^[a-z]/ && NF >= 5 {print $1}')
+        test -n "$names"
+        for n in $names; do
+          grep -q "^$n[[:space:]]" /root/cert-expiry.txt || exit 1
+        done
+      retry: {attempts: 5, interval: 3s}
+    - id: apiserver-renewed
+      description: the API server's serving certificate was renewed
+      weight: 2
+      type: script
+      path: checks/renewed.sh
+      args: [apiserver]
+    - id: kubelet-client-renewed
+      description: the API server's client certificate for the kubelet was renewed
+      weight: 2
+      type: script
+      path: checks/renewed.sh
+      args: [kubelet-client]
+    - id: others-untouched
+      description: every other certificate and kubeconfig is unchanged
+      weight: 2
+      type: script
+      path: checks/untouched.sh
+    - id: served-cert-is-new
+      description: the certificate the API server presents on port 6443 is the one on disk
+      type: nodeExec
+      node: controlplane
+      shell: |
+        served=$(openssl s_client -connect 127.0.0.1:6443 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256)
+        disk=$(openssl x509 -in /etc/kubernetes/pki/apiserver.crt -noout -fingerprint -sha256)
+        test -n "$served" && test "$served" = "$disk"
+      retry: {attempts: 10, interval: 3s}
+    - id: apiserver-restarted
+      description: the running API server started after both certificates were written
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        started=$(kubectl -n kube-system get pod -l component=kube-apiserver \
+          -o 'jsonpath={.items[*].status.containerStatuses[0].state.running.startedAt}')
+        test -n "$started"
+        start=$(date -d "$started" +%s)
+        for f in apiserver apiserver-kubelet-client; do
+          test "$start" -ge "$(stat -c %Y /etc/kubernetes/pki/$f.crt)" || exit 1
+        done
+      retry: {attempts: 10, interval: 3s}
+    - id: apiserver-ready
+      description: the kube-apiserver pod is ready
+      type: ready
+      ref: {kind: pod, namespace: kube-system, selector: component=kube-apiserver}
+      retry: {attempts: 20, interval: 3s}
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [others-untouched, served-cert-is-new, apiserver-restarted, apiserver-ready]
+    timeout: 12m

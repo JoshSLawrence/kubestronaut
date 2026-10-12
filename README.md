@@ -104,6 +104,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/configmap-secret-env`           | workloads-scheduling | 1     | 10m  |
 | `cka/deployment-rollout-rollback`    | workloads-scheduling | 1     | 8m   |
 | `cka/etcd-backup-restore`            | cluster-architecture | 1     | 15m  |
+| `cka/kubeadm-certs-renew`            | cluster-architecture | 1     | 10m  |
 | `cka/networkpolicy-isolate`          | services-networking  | 1     | 10m  |
 | `cka/networkpolicy-least-permissive` | services-networking  | 1     | 8m   |
 | `cka/node-maintenance-drain`         | cluster-architecture | 3     | 10m  |
