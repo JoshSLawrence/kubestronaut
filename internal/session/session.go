@@ -101,7 +101,13 @@ func (s *Store) Init() error {
 	if err := os.MkdirAll(s.Root, 0o700); err != nil {
 		return fmt.Errorf("create state dir %s: %w", s.Root, err)
 	}
-	return nil
+	// MkdirAll leaves an existing directory alone, so tighten it explicitly.
+	d, err := os.Open(s.Root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	return d.Chmod(0o700)
 }
 
 // Lock takes an exclusive lock so two commands cannot change state at once.
@@ -161,6 +167,11 @@ func (s *Store) Save(st *State) error {
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write state: %w", err)
+	}
+	// Sync first so a crash cannot leave a renamed but empty file.
+	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write state: %w", err)
 	}

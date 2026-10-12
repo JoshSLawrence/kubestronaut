@@ -5,11 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/JoshSLawrence/kubestronaut/internal/grade"
 )
+
+// Percent formats a score for display. It truncates instead of rounding, so a
+// score just below the pass mark can never print as the mark itself.
+func Percent(p float64) string {
+	t := math.Floor(p*10+1e-9) / 10
+	if t == math.Floor(t) {
+		return fmt.Sprintf("%.0f%%", t)
+	}
+	return fmt.Sprintf("%.1f%%", t)
+}
 
 // Step prints a progress line in the style of `==> doing something`.
 func Step(w io.Writer, format string, a ...any) {
@@ -80,7 +91,7 @@ func GradeText(w io.Writer, r grade.Report, verbose bool) {
 	if len(extras) > 0 {
 		tail = "  " + strings.Join(extras, "  ")
 	}
-	_, _ = fmt.Fprintf(w, "  Score: %d/%d (%.0f%%)  -- %s%s\n", r.Earned, r.Possible, r.Percent, verdict, tail)
+	_, _ = fmt.Fprintf(w, "  Score: %d/%d (%s)  -- %s%s\n", r.Earned, r.Possible, Percent(r.Percent), verdict, tail)
 }
 
 // JSON writes v as indented JSON.

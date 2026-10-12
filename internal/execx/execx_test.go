@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOSRun(t *testing.T) {
@@ -68,5 +69,18 @@ func TestFakeMatching(t *testing.T) {
 	}
 	if got := f.Lines()[0]; got != "kubectl get po" {
 		t.Fatalf("lines: %q", got)
+	}
+}
+
+func TestOSRunTimeoutKillsGrandchildren(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := OS{}.Run(ctx, Cmd{Name: "bash", Args: []string{"-c", "sleep 30; echo done"}})
+	if err == nil {
+		t.Fatal("want error on timeout")
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("timeout took %s: grandchildren were not killed", d)
 	}
 }

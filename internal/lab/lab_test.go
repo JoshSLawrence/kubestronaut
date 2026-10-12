@@ -426,3 +426,92 @@ func TestRunSolutionAndSSH(t *testing.T) {
 		t.Fatal("exec error")
 	}
 }
+
+func TestStartRefusesExistingCluster(t *testing.T) {
+	f := newFixture(t)
+	f.be.Clusters["ks-cka-demo"] = fake.Nodes("ks-cka-demo", 1)
+	err := f.lab.Start(context.Background(), "demo", StartOptions{})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err: %v", err)
+	}
+	if len(f.be.Deleted) != 0 || len(f.be.Created) != 0 {
+		t.Fatalf("a cluster start did not create must never be deleted: deleted=%v", f.be.Deleted)
+	}
+	if _, ok := f.be.Clusters["ks-cka-demo"]; !ok {
+		t.Fatal("pre-existing cluster vanished")
+	}
+	entries, _ := os.ReadDir(filepath.Join(f.lab.Store.Root, "sessions"))
+	if len(entries) != 0 {
+		t.Fatalf("no session dir may be left: %v", entries)
+	}
+}
+
+func TestStartFailureRemovesSessionDir(t *testing.T) {
+	f := newFixture(t)
+	f.run.Respond([]string{"bash"}, execx.Result{ExitCode: 1}, nil)
+	_ = f.lab.Start(context.Background(), "demo", StartOptions{})
+	entries, _ := os.ReadDir(filepath.Join(f.lab.Store.Root, "sessions"))
+	if len(entries) != 0 {
+		t.Fatalf("session dir left behind: %v", entries)
+	}
+}
+
+func TestStartValidatesFirst(t *testing.T) {
+	f := newFixture(t)
+	f.lab.Catalog.Scenarios[0].Spec.Solution.Script = ""
+	err := f.lab.Start(context.Background(), "demo", StartOptions{})
+	if err == nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("err: %v", err)
+	}
+	if len(f.be.Created) != 0 {
+		t.Fatal("no cluster may be created for an invalid scenario")
+	}
+}
+
+func TestSetupFilesAreRemovedAfterSetup(t *testing.T) {
+	f := newFixture(t)
+	if err := f.lab.Start(context.Background(), "demo", StartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(f.lab.Store.SessionDir(mustID(t, f)), "scenario", "cka", "demo")
+	for _, gone := range []string{"setup/s.sh", "setup/m.yaml"} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); err == nil {
+			t.Errorf("%s must not stay visible to the learner", gone)
+		}
+	}
+	info, err := os.Stat(filepath.Join(f.lab.Store.SessionDir(mustID(t, f)), "setup.log"))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("setup.log must be 0600: %v %v", info, err)
+	}
+}
+
+func TestResetKeepsHelpRecord(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.lab.Start(ctx, "demo", StartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := f.lab.Hint(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.lab.Solution(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.lab.Reset(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st, err := f.lab.Store.Load()
+	if err != nil || st.Tasks[0].HintsUsed != 1 || !st.Tasks[0].SolutionViewed {
+		t.Fatalf("help record lost: %+v %v", st.Tasks, err)
+	}
+}
+
+func TestNodeBoundsCheck(t *testing.T) {
+	f := newFixture(t)
+	if err := f.lab.Store.Save(&session.State{Mode: session.ModeScenario, Current: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.lab.Node(""); err == nil {
+		t.Fatal("want error for inconsistent state")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 const packYAML = `apiVersion: kubestronaut/v1alpha1
@@ -345,4 +346,33 @@ func anyContains(errs []error, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestWaitTimeoutDefaults(t *testing.T) {
+	y := strings.Replace(goodScenario, "        for: condition=Available\n", "        for: condition=Available\n        timeout: 45s\n", 1)
+	f := goodFS()
+	f["cka/demo/scenario.yaml"] = &fstest.MapFile{Data: []byte(y)}
+	c := mustLoad(t, f)
+	if got := c.Scenarios[0].Spec.Setup[2].Timeout.D(); got != 45*time.Second {
+		t.Fatalf("wait.timeout must win over the default, got %s", got)
+	}
+}
+
+func TestNamesMustBeKebab(t *testing.T) {
+	f := goodFS()
+	f["Cka/pack.yaml"] = &fstest.MapFile{Data: []byte(strings.ReplaceAll(packYAML, "name: cka", "name: Cka"))}
+	if c := LoadCatalog(f); !anyContains(c.Problems, "kebab-case") {
+		t.Fatalf("problems: %v", c.Problems)
+	}
+	g := goodFS()
+	g["cka/pack.yaml"] = &fstest.MapFile{Data: []byte(strings.Replace(packYAML, "kind: Pack", "kind: Nope", 1))}
+	if c := LoadCatalog(g); !anyContains(c.Problems, "apiVersion must be") {
+		t.Fatalf("problems: %v", c.Problems)
+	}
+	h := goodFS()
+	h["cka/Bad_Name/scenario.yaml"] = &fstest.MapFile{Data: []byte(strings.Replace(goodScenario, "name: demo", "name: Bad_Name", 1))}
+	h["cka/Bad_Name/prompt.md"] = h["cka/demo/prompt.md"]
+	if errs := LoadCatalog(h).Validate(); !anyContains(errs, "kebab-case") {
+		t.Fatalf("errs: %v", errs)
+	}
 }

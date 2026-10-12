@@ -401,7 +401,13 @@ func TestConnectivity(t *testing.T) {
 	env := &Env{Kube: k}
 	var res execx.Result
 	var argv []string
-	k.ExecFunc = func(_, _, _ string, a []string) (execx.Result, error) { argv = a; return res, nil }
+	k.ExecFunc = func(_, _, _ string, a []string) (execx.Result, error) {
+		if a[0] == "nslookup" {
+			return execx.Result{}, nil
+		}
+		argv = a
+		return res, nil
+	}
 	const head = "id: x\ntype: connectivity\nfrom: {kind: pod, name: web, namespace: shop}\nto: api.shop.svc:8080\n"
 	run1 := func(extra string) (Result, error) { return run(t, build(t, head+extra), env) }
 
@@ -447,6 +453,49 @@ func TestConnectivity(t *testing.T) {
 	}
 	if strings.Join(argv, " ") != "nc -z -w 5 api.shop.svc 8080" {
 		t.Fatalf("nc argv: %v", argv)
+	}
+	// nc: a name that does not resolve must not read as "denied".
+	k.ExecFunc = func(_, _, _ string, a []string) (execx.Result, error) {
+		if a[0] == "nslookup" {
+			return execx.Result{ExitCode: 1, Stdout: []byte("** server can't find")}, nil
+		}
+		return execx.Result{ExitCode: 1}, nil
+	}
+	if _, err := run1("expect: denied\nprobe: nc"); err == nil || !strings.Contains(err.Error(), "did not resolve") {
+		t.Fatalf("nc DNS failure: %v", err)
+	}
+	k.ExecFunc = func(_, _, _ string, a []string) (execx.Result, error) {
+		if a[0] == "nslookup" {
+			return execx.Result{ExitCode: 127, Stderr: []byte("nslookup: not found")}, nil
+		}
+		return execx.Result{ExitCode: 1, Stderr: []byte("nc: bad address 'api.shop.svc'")}, nil
+	}
+	if _, err := run1("expect: denied\nprobe: nc"); err == nil || !strings.Contains(err.Error(), "did not resolve") {
+		t.Fatalf("nc bad address: %v", err)
+	}
+	k.ExecFunc = func(_, _, _ string, a []string) (execx.Result, error) {
+		if a[0] == "nslookup" {
+			return execx.Result{Stderr: []byte(`Error from server (NotFound): pods "web" not found`), ExitCode: 1}, nil
+		}
+		return execx.Result{ExitCode: 1}, nil
+	}
+	if _, err := run1("expect: denied\nprobe: nc"); err == nil {
+		t.Fatal("kubectl failure during the lookup")
+	}
+	k.ExecFunc = func(_, _, _ string, a []string) (execx.Result, error) {
+		if a[0] == "nslookup" {
+			return execx.Result{}, nil
+		}
+		return execx.Result{ExitCode: 1}, nil
+	}
+	if r, err := run1("expect: denied\nprobe: nc"); err != nil || !r.Passed {
+		t.Fatalf("resolvable and blocked is denied: %+v %v", r, err)
+	}
+	k.ExecFunc = func(string, string, string, []string) (execx.Result, error) {
+		return execx.Result{}, errors.New("boom")
+	}
+	if _, err := run1("expect: denied\nprobe: nc"); err == nil {
+		t.Fatal("exec error during lookup")
 	}
 	k.Objects = nil
 	if _, err := run1("expect: denied"); err == nil {

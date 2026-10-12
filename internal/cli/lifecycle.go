@@ -68,7 +68,7 @@ func (a *App) statusCmd() *cobra.Command {
 				fprintf(w, "Solution:    viewed\n")
 			}
 			if s.LastGrade != nil {
-				fprintf(w, "Last grade:  %d/%d (%.0f%%)\n", s.LastGrade.Earned, s.LastGrade.Possible, s.LastGrade.Percent)
+				fprintf(w, "Last grade:  %d/%d (%s)\n", s.LastGrade.Earned, s.LastGrade.Possible, ui.Percent(s.LastGrade.Percent))
 			}
 			fprintf(w, "Kubeconfig:  %s\n", s.Kubeconfig)
 			return nil

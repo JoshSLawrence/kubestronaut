@@ -9,7 +9,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
+	"time"
 )
+
+// killGrace is how long Wait may block on output pipes after the process was
+// killed, in case a grandchild still holds them open.
+const killGrace = 5 * time.Second
 
 // Cmd describes one process invocation.
 type Cmd struct {
@@ -51,6 +57,17 @@ func (OS) command(ctx context.Context, c Cmd) *exec.Cmd {
 // Run implements Runner.
 func (o OS) Run(ctx context.Context, c Cmd) (Result, error) {
 	cmd := o.command(ctx, c)
+	// Own process group, so that cancelling kills grandchildren too (a shell
+	// running `sleep` would otherwise keep the output pipes open). Not done for
+	// Interactive, where the child must stay in the terminal's foreground group.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = killGrace
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()

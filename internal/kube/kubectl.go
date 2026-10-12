@@ -17,6 +17,9 @@ type Kubectl struct {
 	Kubeconfig string
 	// Binary defaults to "kubectl".
 	Binary string
+	// CacheDir, if set, becomes KUBECACHEDIR so kubectl does not write its
+	// discovery cache under ~/.kube.
+	CacheDir string
 }
 
 func (k *Kubectl) run(ctx context.Context, stdin []byte, args ...string) (execx.Result, error) {
@@ -25,6 +28,9 @@ func (k *Kubectl) run(ctx context.Context, stdin []byte, args ...string) (execx.
 		bin = "kubectl"
 	}
 	c := execx.Cmd{Name: bin, Args: append([]string{"--kubeconfig", k.Kubeconfig}, args...)}
+	if k.CacheDir != "" {
+		c.Env = []string{"KUBECACHEDIR=" + k.CacheDir}
+	}
 	if stdin != nil {
 		c.Stdin = bytes.NewReader(stdin)
 	}

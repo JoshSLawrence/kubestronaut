@@ -26,6 +26,9 @@ func (s *Scenario) Validate(p *Pack) []error {
 	if s.Kind != KindScenario {
 		add("kind must be %q, got %q", KindScenario, s.Kind)
 	}
+	if !kebab.MatchString(s.DirName) || !kebab.MatchString(s.Pack) {
+		add("pack and scenario directory names must be lowercase kebab-case (DNS-1123) because they become cluster names")
+	}
 	if s.Metadata.Name != s.DirName {
 		add("metadata.name %q must equal the directory name %q", s.Metadata.Name, s.DirName)
 	}

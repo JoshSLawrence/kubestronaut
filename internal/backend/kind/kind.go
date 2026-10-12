@@ -157,6 +157,9 @@ func (k *Kind) Nodes(ctx context.Context, cluster string) ([]backend.Node, error
 
 // NodeExec implements backend.Backend.
 func (k *Kind) NodeExec(ctx context.Context, cluster, alias string, stdin io.Reader, argv ...string) (execx.Result, error) {
+	if err := ownedName(cluster); err != nil {
+		return execx.Result{}, err
+	}
 	node, err := backend.NodeName(cluster, alias)
 	if err != nil {
 		return execx.Result{}, err
@@ -176,6 +179,9 @@ func (k *Kind) NodeExec(ctx context.Context, cluster, alias string, stdin io.Rea
 
 // NodeShell implements backend.Backend.
 func (k *Kind) NodeShell(ctx context.Context, cluster, alias string) error {
+	if err := ownedName(cluster); err != nil {
+		return err
+	}
 	node, err := backend.NodeName(cluster, alias)
 	if err != nil {
 		return err

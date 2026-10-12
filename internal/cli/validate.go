@@ -3,9 +3,6 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -57,8 +54,7 @@ func (a *App) validateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
+			ctx := cmd.Context()
 			failed := 0
 			for _, id := range ids {
 				s, _ := cat.Find(id)

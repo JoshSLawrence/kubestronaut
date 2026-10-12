@@ -6,13 +6,15 @@
 //
 //	KS_E2E=1 go test -tags e2e -timeout 90m ./test/e2e/
 //
-// KS_E2E_SCENARIOS (comma separated ids) narrows the run.
+// KS_E2E_SCENARIOS (comma separated ids) narrows the run, and
+// KS_E2E_TIMEOUT sets the go test timeout used by `mise run e2e`.
 package e2e
 
 import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,12 +25,18 @@ import (
 	"github.com/JoshSLawrence/kubestronaut/scenarios"
 )
 
-var phase1 = []string{"cka/rbac-dev-access", "cka/networkpolicy-isolate", "cka/troubleshoot-kubelet"}
-
-func ids() []string {
+// ids defaults to every non-experimental scenario in the catalog, so new
+// scenarios and packs are covered without editing this file.
+func ids(cat *scenario.Catalog) []string {
 	v := strings.TrimSpace(os.Getenv("KS_E2E_SCENARIOS"))
 	if v == "" {
-		return phase1
+		var all []string
+		for _, s := range cat.Scenarios {
+			if !s.Metadata.Experimental {
+				all = append(all, s.ID)
+			}
+		}
+		return all
 	}
 	var out []string
 	for _, id := range strings.Split(v, ",") {
@@ -62,15 +70,25 @@ func TestScenarios(t *testing.T) {
 	home := t.TempDir()
 	be := kind.New(filepath.Join(home, "scratch.kubeconfig"))
 
-	for _, id := range ids() {
+	for _, id := range ids(cat) {
 		t.Run(strings.ReplaceAll(id, "/", "_"), func(t *testing.T) {
 			s, err := cat.Find(id)
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Runs one at a time: a laptop's Docker cannot hold several clusters.
+			name := scenario.ClusterName(s.Pack, s.DirName)
+			// Never adopt a cluster this test did not create: E2E refuses to
+			// run next to existing clusters, and the cleanup below must not
+			// delete one that was there before.
+			existing, err := be.List(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if slices.Contains(existing, name) {
+				t.Fatalf("cluster %s already exists: run `kubestronaut stop --all` first", name)
+			}
 			t.Cleanup(func() {
-				if err := be.Delete(context.Background(), scenario.ClusterName(s.Pack, s.DirName)); err != nil {
+				if err := be.Delete(context.Background(), name); err != nil {
 					t.Logf("cleanup: %v", err)
 				}
 			})

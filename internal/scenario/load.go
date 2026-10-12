@@ -61,6 +61,14 @@ func LoadCatalog(layers ...fs.FS) *Catalog {
 				c.Problems = append(c.Problems, fmt.Errorf("%s/%s: %w", e.Name(), packFile, err))
 				continue
 			}
+			if p.APIVersion != APIVersion || p.Kind != KindPack {
+				c.Problems = append(c.Problems, fmt.Errorf("%s/%s: apiVersion must be %q and kind %q", e.Name(), packFile, APIVersion, KindPack))
+				continue
+			}
+			if !kebab.MatchString(e.Name()) {
+				c.Problems = append(c.Problems, fmt.Errorf("%s: pack names must be lowercase kebab-case (DNS-1123) because they become cluster names", e.Name()))
+				continue
+			}
 			if p.Metadata.Name != e.Name() {
 				c.Problems = append(c.Problems, fmt.Errorf("%s/%s: metadata.name %q must equal the directory name", e.Name(), packFile, p.Metadata.Name))
 				continue
@@ -167,12 +175,16 @@ func applyDefaults(s *Scenario) {
 	}
 	for i := range s.Spec.Setup {
 		st := &s.Spec.Setup[i]
-		if st.Timeout == 0 {
-			if st.Wait != nil {
+		switch {
+		case st.Wait != nil:
+			// wait.timeout beats the step's timeout, which beats the default.
+			if st.Wait.Timeout != 0 {
+				st.Timeout = st.Wait.Timeout
+			} else if st.Timeout == 0 {
 				st.Timeout = Duration(DefaultWaitTimeout)
-			} else {
-				st.Timeout = Duration(DefaultScriptTimeout)
 			}
+		case st.Timeout == 0:
+			st.Timeout = Duration(DefaultScriptTimeout)
 		}
 	}
 }

@@ -245,3 +245,16 @@ func TestLoadImagesFallsBackToSinglePlatformSave(t *testing.T) {
 		t.Fatal("node listing failure")
 	}
 }
+
+func TestNodeAccessRefusesForeignClusters(t *testing.T) {
+	k, f := newKind()
+	if _, err := k.NodeExec(context.Background(), "prod", "node01", nil, "ls"); err == nil {
+		t.Fatal("exec must refuse a non ks- cluster")
+	}
+	if err := k.NodeShell(context.Background(), "prod", "node01"); err == nil {
+		t.Fatal("shell must refuse a non ks- cluster")
+	}
+	if len(f.Calls) != 0 {
+		t.Fatal("nothing may run")
+	}
+}

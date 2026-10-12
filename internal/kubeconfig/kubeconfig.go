@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/JoshSLawrence/kubestronaut/internal/execx"
 )
@@ -99,7 +100,7 @@ func kubectl(ctx context.Context, r execx.Runner, env []string, args ...string) 
 		return fmt.Errorf("kubectl %s: %w", args[0], err)
 	}
 	if res.ExitCode != 0 {
-		return fmt.Errorf("kubectl %s failed: %s", args[len(args)-2], res.Stderr)
+		return fmt.Errorf("kubectl %s failed: %s", strings.Join(args[:min(len(args), 4)], " "), strings.TrimSpace(string(res.Stderr)))
 	}
 	return nil
 }

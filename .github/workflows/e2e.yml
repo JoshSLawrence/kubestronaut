@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       scenarios:
-        description: Comma separated scenario ids; empty runs every CKA scenario
+        description: Comma separated scenario ids; empty runs every scenario of every pack
         required: false
         default: ""
   schedule:
@@ -25,6 +25,8 @@ jobs:
       ids: ${{ steps.ids.outputs.ids }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
       - id: ids
         env:
@@ -33,7 +35,7 @@ jobs:
           if [ -n "$INPUT_SCENARIOS" ]; then
             ids=$(printf '%s' "$INPUT_SCENARIOS" | jq -Rc 'split(",") | map(gsub("\\s"; "")) | map(select(length > 0))')
           else
-            ids=$(go run ./cmd/kubestronaut list --exam cka --json | jq -c 'map(.id)')
+            ids=$(go run ./cmd/kubestronaut list --json | jq -c 'map(.id)')
           fi
           echo "ids=$ids" >> "$GITHUB_OUTPUT"
 
@@ -50,7 +52,12 @@ jobs:
         id: ${{ fromJSON(needs.matrix.outputs.ids) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
       - run: mise run e2e
         env:
           KS_E2E_SCENARIOS: ${{ matrix.id }}
+          # go test must give up before the 40 minute job timeout, otherwise
+          # the runner kills it before t.Cleanup can delete the cluster.
+          KS_E2E_TIMEOUT: 30m

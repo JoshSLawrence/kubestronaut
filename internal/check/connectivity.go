@@ -76,6 +76,11 @@ func (c *connectivity) Run(ctx context.Context, env *Env) (Result, error) {
 	if len(pods) == 0 {
 		return Result{}, fmt.Errorf("source pod %s not found", describe(c.From))
 	}
+	if c.Probe == "nc" && c.Expect == "denied" && net.ParseIP(c.host) == nil {
+		if err := c.checkResolves(ctx, env); err != nil {
+			return Result{}, err
+		}
+	}
 	res, err := env.Kube.Exec(ctx, c.From.Namespace, c.From.Name, "", c.argv())
 	if err != nil {
 		return Result{}, err
@@ -85,6 +90,9 @@ func (c *connectivity) Run(ctx context.Context, env *Env) (Result, error) {
 		return Result{}, fmt.Errorf("could not exec in %s: %s", describe(c.From), strings.TrimSpace(string(res.Stderr)))
 	}
 	connected := res.ExitCode == 0
+	if !connected && c.Probe == "nc" && c.Expect == "denied" && strings.Contains(out, "bad address") {
+		return Result{}, fmt.Errorf("host %s did not resolve: %s", c.host, strings.TrimSpace(out))
+	}
 	if !connected && c.Probe == "agnhost" && c.Expect == "denied" {
 		// Only a timeout or a refusal is a network decision. A name that does
 		// not resolve, or anything unrecognised, must not read as "denied".
@@ -102,4 +110,25 @@ func (c *connectivity) Run(ctx context.Context, env *Env) (Result, error) {
 		return fail("%s can reach %s but should not", describe(c.From), c.To), nil
 	}
 	return pass(), nil
+}
+
+// checkResolves makes sure a failing nc is a network decision and not a name
+// that does not resolve. nc cannot tell the two apart reliably, so the name is
+// looked up first; images without nslookup skip this and rely on nc's own
+// "bad address" message.
+func (c *connectivity) checkResolves(ctx context.Context, env *Env) error {
+	res, err := env.Kube.Exec(ctx, c.From.Namespace, c.From.Name, "", []string{"nslookup", c.host})
+	if err != nil {
+		return err
+	}
+	out := string(res.Stdout) + string(res.Stderr)
+	switch {
+	case res.ExitCode == 0:
+		return nil
+	case isKubectlFailure(res):
+		return fmt.Errorf("could not exec in %s: %s", describe(c.From), strings.TrimSpace(string(res.Stderr)))
+	case res.ExitCode == 127 || strings.Contains(out, "not found"):
+		return nil
+	}
+	return fmt.Errorf("host %s did not resolve: %s", c.host, strings.TrimSpace(out))
 }

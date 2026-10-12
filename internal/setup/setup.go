@@ -45,6 +45,7 @@ func WriteLib(dir string) (string, error) {
 type EnvParams struct {
 	AdminKubeconfig string
 	Binary          string // path of the kubestronaut binary, KS_BIN
+	CacheDir        string // kubectl discovery cache, kept out of ~/.kube
 	Home            string // state dir, so nested kubestronaut calls agree
 	Cluster         string
 	Context         string
@@ -63,6 +64,9 @@ func ScriptEnv(p EnvParams) []string {
 		"KS_CONTEXT=" + p.Context,
 		"KS_SCENARIO_DIR=" + p.ScenarioDir,
 		"KS_LIB=" + p.Lib,
+	}
+	if p.CacheDir != "" {
+		env = append(env, "KUBECACHEDIR="+p.CacheDir)
 	}
 	for _, n := range p.Nodes {
 		env = append(env, "KS_NODE_"+strings.ToUpper(n.Alias)+"="+n.Name)
@@ -184,7 +188,8 @@ func (r *Runner) manifest(ctx context.Context, st scenario.SetupStep) error {
 
 func (r *Runner) wait(ctx context.Context, st scenario.SetupStep) error {
 	w := st.Wait
-	wctx, cancel := context.WithTimeout(ctx, st.Timeout.D())
+	timeout := waitTimeout(st)
+	wctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if w.For != "delete" {
 		// kubectl wait fails at once for objects that do not exist yet, which
@@ -196,12 +201,12 @@ func (r *Runner) wait(ctx context.Context, st scenario.SetupStep) error {
 			}
 			select {
 			case <-wctx.Done():
-				return fmt.Errorf("wait: %s did not appear within %s", w.Ref.Kind, st.Timeout.D())
+				return fmt.Errorf("wait: %s did not appear within %s", w.Ref.Kind, timeout)
 			case <-time.After(pollInterval):
 			}
 		}
 	}
-	remaining := st.Timeout.D()
+	remaining := timeout
 	if dl, ok := wctx.Deadline(); ok {
 		remaining = max(time.Until(dl), time.Second)
 	}
@@ -209,4 +214,15 @@ func (r *Runner) wait(ctx context.Context, st scenario.SetupStep) error {
 		return fmt.Errorf("wait for %s on %s: %w", w.For, w.Ref.Kind, err)
 	}
 	return nil
+}
+
+// waitTimeout resolves wait.timeout, then the step timeout, then the default.
+func waitTimeout(st scenario.SetupStep) time.Duration {
+	switch {
+	case st.Wait.Timeout > 0:
+		return st.Wait.Timeout.D()
+	case st.Timeout > 0:
+		return st.Timeout.D()
+	}
+	return scenario.DefaultWaitTimeout
 }

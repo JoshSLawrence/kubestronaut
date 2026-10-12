@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,7 +50,9 @@ type Lab struct {
 // New builds a Lab with real kubectl clients.
 func New(cat *scenario.Catalog, be backend.Backend, store *session.Store, r execx.Runner, binary string, out io.Writer) *Lab {
 	l := &Lab{Catalog: cat, Backend: be, Store: store, Runner: r, Binary: binary, Out: out, Now: time.Now}
-	l.KubeFor = func(admin string) kube.Client { return &kube.Kubectl{Runner: r, Kubeconfig: admin} }
+	l.KubeFor = func(admin string) kube.Client {
+		return &kube.Kubectl{Runner: r, Kubeconfig: admin, CacheDir: filepath.Join(store.Root, "cache")}
+	}
 	return l
 }
 
@@ -95,10 +98,14 @@ func (l *Lab) Start(ctx context.Context, ref string, o StartOptions) error {
 	if err != nil {
 		return err
 	}
+	// A broken scenario should fail in a second, not after a cluster boots.
+	if errs := append(s.Validate(l.Catalog.Packs[s.Pack]), check.Validate(s)...); len(errs) > 0 {
+		return fmt.Errorf("scenario %s is invalid, not starting a cluster: %w", s.ID, errors.Join(errs...))
+	}
 	switch st, err := l.Store.Load(); {
 	case err == nil:
 		if !o.Force {
-			return fmt.Errorf("a session for %s is already active: run `kubestronaut stop` first, or pass --force to replace it", st.Tasks[st.Current].Scenario)
+			return fmt.Errorf("a session for %s is already active: run `kubestronaut stop` first, or pass --force to replace it", st.Tasks[min(max(st.Current, 0), len(st.Tasks)-1)].Scenario)
 		}
 		if err := l.stopLocked(ctx, st); err != nil {
 			return err
@@ -113,6 +120,16 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 	now := l.Now()
 	id := session.NewID(now)
 	dir := l.Store.SessionDir(id)
+	name := scenario.ClusterName(s.Pack, s.DirName)
+	// Refuse before anything is armed for cleanup: the failure path deletes
+	// the cluster, and it must only ever delete one this start created.
+	existing, err := l.Backend.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list clusters: %w", err)
+	}
+	if slices.Contains(existing, name) {
+		return fmt.Errorf("a cluster named %s already exists (another --home, or a leftover): run `kubestronaut stop --all` to remove it, then retry", name)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -123,7 +140,6 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 	if version == "" {
 		version = backend.DefaultKubernetesVersion
 	}
-	name := scenario.ClusterName(s.Pack, s.DirName)
 	admin := filepath.Join(dir, "admin.kubeconfig")
 	st := &session.State{
 		Mode: session.ModeScenario, ID: id, StartedAt: now,
@@ -150,6 +166,7 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 		}
 		_ = l.Store.Clear()
 		_ = l.regenKubeconfig(cctx, nil)
+		_ = os.RemoveAll(dir)
 	}()
 
 	workers := s.Spec.Cluster.Workers
@@ -199,6 +216,7 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 		return fmt.Errorf("%w (details: %s, or rerun with -v)", err, logFile.Name())
 	}
 	done()
+	l.removeSetupFiles(st, s)
 
 	st.StartedAt = l.Now()
 	if err := l.Store.Save(st); err != nil {
@@ -208,6 +226,19 @@ func (l *Lab) startLocked(ctx context.Context, s *scenario.Scenario, o StartOpti
 	_, _ = fmt.Fprintln(l.Out)
 	_, _ = fmt.Fprint(l.Out, l.promptText(s))
 	return nil
+}
+
+// removeSetupFiles deletes the setup scripts and manifests from the learner's
+// scenario directory once they ran, because they describe the fault.
+func (l *Lab) removeSetupFiles(st *session.State, s *scenario.Scenario) {
+	dir := l.scenarioDir(st.ID, s)
+	for _, step := range s.Spec.Setup {
+		for _, p := range []string{step.Script, step.Manifest} {
+			if p != "" && filepath.IsLocal(p) {
+				_ = os.RemoveAll(filepath.Join(dir, p))
+			}
+		}
+	}
 }
 
 // setupRunner materializes the scenario and prepares the step runner. The
@@ -239,6 +270,7 @@ func (l *Lab) setupRunner(st *session.State, s *scenario.Scenario) (*setup.Runne
 
 func (l *Lab) scriptEnv(c session.ClusterRef, scenarioDir, lib string) []string {
 	return setup.ScriptEnv(setup.EnvParams{
+		CacheDir:        filepath.Join(l.Store.Root, "cache"),
 		AdminKubeconfig: c.AdminKubeconfig, Binary: l.Binary, Home: l.Store.Root,
 		Cluster: c.Name, Context: c.Context, ScenarioDir: scenarioDir, Lib: lib, Nodes: c.Nodes,
 	})
@@ -413,10 +445,20 @@ func (l *Lab) Reset(ctx context.Context) error {
 	if c != nil {
 		opts.K8sVersion = c.KubernetesVersion
 	}
+	hints, viewed := t.HintsUsed, t.SolutionViewed
 	if err := l.stopLocked(ctx, st); err != nil {
 		return err
 	}
-	return l.startLocked(ctx, s, opts)
+	if err := l.startLocked(ctx, s, opts); err != nil {
+		return err
+	}
+	// Resetting must not be a way to wipe the record of help taken.
+	ns, err := l.Store.Load()
+	if err != nil {
+		return err
+	}
+	ns.Tasks[0].HintsUsed, ns.Tasks[0].SolutionViewed = hints, viewed
+	return l.Store.Save(ns)
 }
 
 // Grade runs the checks of the active task.
@@ -441,7 +483,7 @@ func (l *Lab) Grade(ctx context.Context) (grade.Report, error) {
 	if b, err := marshalReport(rep); err == nil {
 		gd := filepath.Join(l.Store.SessionDir(st.ID), "grades")
 		if os.MkdirAll(gd, 0o700) == nil {
-			_ = os.WriteFile(filepath.Join(gd, l.Now().UTC().Format("20060102T150405Z")+".json"), b, 0o600)
+			_ = os.WriteFile(filepath.Join(gd, fmt.Sprintf("%s-%09d.json", l.Now().UTC().Format("20060102T150405Z"), l.Now().Nanosecond())), b, 0o600)
 		}
 	}
 	return rep, nil
@@ -568,6 +610,9 @@ func (l *Lab) Node(clusterOverride string) (string, error) {
 	st, err := l.Store.Load()
 	if err != nil {
 		return "", err
+	}
+	if st.Current < 0 || st.Current >= len(st.Tasks) {
+		return "", errors.New("state file is inconsistent (no current task): run `kubestronaut stop --all`")
 	}
 	return st.Tasks[st.Current].Cluster, nil
 }

@@ -213,3 +213,35 @@ func TestKsWaitNodeRejectsBadState(t *testing.T) {
 		t.Fatalf("err %v stderr %q", err, errb.String())
 	}
 }
+
+func TestWaitTimeoutPrecedence(t *testing.T) {
+	sec := func(n int) scenario.Duration { return scenario.Duration(time.Duration(n) * time.Second) }
+	cases := []struct {
+		name string
+		st   scenario.SetupStep
+		want time.Duration
+	}{
+		{"wait.timeout wins", scenario.SetupStep{Timeout: sec(5), Wait: &scenario.Wait{Timeout: sec(7)}}, 7 * time.Second},
+		{"step timeout next", scenario.SetupStep{Timeout: sec(5), Wait: &scenario.Wait{}}, 5 * time.Second},
+		{"default last", scenario.SetupStep{Wait: &scenario.Wait{}}, scenario.DefaultWaitTimeout},
+	}
+	for _, c := range cases {
+		if got := waitTimeout(c.st); got != c.want {
+			t.Errorf("%s: got %s want %s", c.name, got, c.want)
+		}
+	}
+}
+
+func TestWaitStepHonoursWaitTimeout(t *testing.T) {
+	old := pollInterval
+	pollInterval = 5 * time.Millisecond
+	defer func() { pollInterval = old }()
+	r := &Runner{Kube: &kube.Fake{}, Exec: &execx.Fake{}, Dir: t.TempDir()}
+	// The step timeout alone would wait a minute; wait.timeout must cut it.
+	st := scenario.SetupStep{Timeout: scenario.Duration(time.Minute),
+		Wait: &scenario.Wait{Ref: kube.Ref{Kind: "pod", Name: "ghost"}, For: "create", Timeout: scenario.Duration(40 * time.Millisecond)}}
+	start := time.Now()
+	if err := r.Run(context.Background(), scen(st)); err == nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("wait.timeout ignored: err=%v after %s", err, time.Since(start))
+	}
+}

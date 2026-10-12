@@ -39,7 +39,7 @@ func TestGradeText(t *testing.T) {
 	out := b.String()
 	for _, want := range []string{
 		"[PASS] 2/2  a    first", "[FAIL] 0/3  bbb  second", "         nope",
-		"error: api down", "Score: 2/6 (33%)  -- not passed (needs 100%)",
+		"error: api down", "Score: 2/6 (33.3%)  -- not passed (needs 100%)",
 		"elapsed 1m30s", "hints used: 1", "solution viewed",
 	} {
 		if !strings.Contains(out, want) {
@@ -63,5 +63,14 @@ func TestStepWarnJSON(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), "==> hello 1\nwarning: careful\n{\n  \"a\": 1\n}") {
 		t.Fatalf("got %q", b.String())
+	}
+}
+
+func TestPercent(t *testing.T) {
+	cases := map[float64]string{100: "100%", 66: "66%", 65.7: "65.7%", 65.99: "65.9%", 28.5714: "28.5%", 0: "0%"}
+	for in, want := range cases {
+		if got := Percent(in); got != want {
+			t.Errorf("%v: got %s want %s", in, got, want)
+		}
 	}
 }
