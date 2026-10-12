@@ -1,0 +1,97 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: helm-install-rollback
+  title: Install a chart with Helm and roll back a bad release
+  domain: cluster-architecture
+  difficulty: medium
+  tags: [helm, rollback, traefik]
+spec:
+  timeLimit: 12m
+  weight: 6
+  context: k8s-helm
+  namespaces: [ingress, shop]
+  images:
+    - docker.io/traefik:v3.7.14
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`helm install --help` lists how to set values and how to leave the
+      chart's CRDs out. `helm show values` prints what the chart accepts."
+    - "`helm history` shows the revisions of a release."
+  setup:
+    - script: setup/releases.sh
+      timeout: 6m
+  checks:
+    - id: edge-release
+      description: Helm release edge in namespace ingress is deployed
+      type: nodeExec
+      node: controlplane
+      shell: helm status edge -n ingress -o json | jq -e '.info.status == "deployed"'
+    - id: edge-values
+      description: the release was installed with the requested values
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      # Values are compared as text, so 30080 and "30080" both count.
+      shell: |
+        helm get values edge -n ingress -o json | jq -e '
+          (.deployment.replicas | tostring) == "2"
+          and .service.spec.type == "NodePort"
+          and (.ports.web.nodePort | tostring) == "30080"
+          and .providers.kubernetesCRD.enabled == false'
+    - id: edge-ready
+      description: deployment ingress/edge-traefik has 2 available replicas
+      weight: 2
+      type: ready
+      ref: {kind: deployment, name: edge-traefik, namespace: ingress}
+      minReady: 2
+      retry: {attempts: 10, interval: 3s}
+    - id: edge-nodeport
+      description: Service ingress/edge-traefik is a NodePort Service with its web port on node port 30080
+      weight: 2
+      type: jsonPath
+      ref: {kind: service, name: edge-traefik, namespace: ingress}
+      path: '{.spec.type}/{.spec.ports[?(@.name=="web")].nodePort}'
+      equals: NodePort/30080
+    - id: edge-provider
+      description: the running Traefik does not start the Kubernetes CRD provider
+      type: nodeExec
+      node: controlplane
+      shell: |
+        args=$(kubectl -n ingress get deployment edge-traefik \
+          -o 'jsonpath={.spec.template.spec.containers[0].args}')
+        test -n "$args" && ! grep -qi 'providers.kubernetescrd' <<<"$args"
+    - id: no-traefik-crds
+      description: the chart's custom resource definitions are not installed
+      type: resourceExists
+      ref: {kind: customresourcedefinition, name: ingressroutes.traefik.io}
+      absent: true
+    - id: storefront-rolled-back
+      description: release storefront in namespace shop was rolled back by Helm
+      weight: 3
+      type: nodeExec
+      node: controlplane
+      shell: |
+        helm history storefront -n shop -o json | jq -e '
+          .[-1] | .status == "deployed" and .revision >= 3 and (.description | test("Rollback to 1"))'
+    - id: storefront-ready
+      description: deployment shop/storefront finished rolling out
+      weight: 2
+      type: jsonPath
+      ref: {kind: deployment, name: storefront, namespace: shop}
+      path: '{.status.conditions[?(@.type=="Progressing")].reason}/{.status.unavailableReplicas}'
+      equals: NewReplicaSetAvailable/
+      retry: {attempts: 10, interval: 3s}
+    - id: storefront-image
+      description: deployment shop/storefront runs the working image
+      type: jsonPath
+      ref: {kind: deployment, name: storefront, namespace: shop}
+      path: '{.spec.template.spec.containers[0].image}'
+      equals: registry.k8s.io/e2e-test-images/agnhost:2.61
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution: [no-traefik-crds]
+    timeout: 15m

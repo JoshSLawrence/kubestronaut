@@ -1,0 +1,6 @@
+apiVersion: v2
+name: storefront
+description: A small web front end for the helm-install-rollback lab
+type: application
+version: 0.1.0
+appVersion: "2.61"
