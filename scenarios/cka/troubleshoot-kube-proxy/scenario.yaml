@@ -36,11 +36,11 @@ spec:
       timeout: 5m
   checks:
     - id: kube-proxy-ready
-      description: the kube-proxy DaemonSet is rolled out on every node
+      description: kube-proxy is running and stable on every node
       weight: 2
-      type: ready
-      ref: {kind: daemonset, name: kube-proxy, namespace: kube-system}
-      retry: {attempts: 10, interval: 3s}
+      type: script
+      path: checks/proxy-stable.sh
+      retry: {attempts: 8, interval: 3s}
     - id: kube-proxy-config
       description: kube-proxy reads its configuration from the ConfigMap volume
       weight: 2
