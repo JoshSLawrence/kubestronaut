@@ -107,6 +107,7 @@ Only one session runs at a time, which keeps Docker memory in check. Exam mode
 | `cka/deployment-rollout-rollback`    | workloads-scheduling | 1     | 8m   |
 | `cka/etcd-backup-restore`            | cluster-architecture | 1     | 15m  |
 | `cka/gateway-httproute`              | services-networking  | 2     | 12m  |
+| `cka/gateway-migrate-ingress-tls`    | services-networking  | 2     | 15m  |
 | `cka/helm-install-rollback`          | cluster-architecture | 1     | 12m  |
 | `cka/hpa-autoscale`                  | workloads-scheduling | 2     | 10m  |
 | `cka/ingress-traefik`                | services-networking  | 2     | 12m  |
