@@ -836,6 +836,14 @@ the e2e validation proves it.
   `kubeadmConfigPatches`. With `networking.disableDefaultCNI` the config gets
   `networking: {disableDefaultCNI: true}` and kind runs with `--wait 0s`,
   because the nodes cannot become Ready without a CNI.
+
+  On a Linux host with a local Docker daemon, `/boot/config-<release>` is
+  mounted read-only into every node when it exists. kubeadm's preflight
+  `SystemVerification` treats an unreadable kernel config as fatal, and most
+  Linux kernels (Ubuntu, GitHub's runners) do not expose `/proc/config.gz`,
+  so without the mount the labs that run `kubeadm join` or `kubeadm upgrade`
+  fail there. Docker Desktop's VM exposes `/proc/config.gz`, so macOS needs
+  nothing.
 - **Image table.** `internal/backend/kind/images.go` maps versions to the
   digests published for kind v0.33.0:
 
