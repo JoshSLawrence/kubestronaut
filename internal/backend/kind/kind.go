@@ -267,8 +267,10 @@ func (k *Kind) loadViaSave(ctx context.Context, cluster, img string) error {
 	if err != nil {
 		// Docker's containerd image store can hold an entry for an image
 		// whose layers it cannot export (seen with registry.k8s.io/etcd
-		// 3.7.0-0 while 3.6.8-0 exported fine). Pulling the platform again
-		// repairs the entry; try the save once more.
+		// 3.7.0-0 while 3.6.8-0 exported fine). A fresh pull of the platform
+		// is a cheap retry that may refresh the entry; it did not for that
+		// etcd image on Docker 29.8.2, so callers must still cope with a
+		// failed load.
 		if _, perr := k.run(ctx, "docker", "pull", "--platform", platform, img); perr != nil {
 			return errors.Join(err, perr)
 		}

@@ -48,8 +48,11 @@ is restarting fails with `forbidden` errors.
   manifests, and the add-on images, which only `kubeadm upgrade apply`
   changes;
 - the kubelet version of both nodes, and that both are schedulable and Ready;
-- that the pods of `apps/web` were recreated, which only a drain (or another
-  eviction) does.
+- the backups that `kubeadm upgrade apply` (on controlplane) and `kubeadm
+  upgrade node` (on node01) leave behind, so skipping either step fails;
+- that both nodes were taken out of scheduling (the kubelet records a
+  `NodeNotSchedulable` event) and that the pods of `apps/web` were recreated,
+  so restarting the deployment without draining does not pass.
 
 ## Notes on the lab
 

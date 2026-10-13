@@ -864,8 +864,7 @@ the e2e validation proves it.
   because a key generated in the same build would prove nothing. The
   `kubernetes-cni` dependency of kubelet is met by a small `kind-cni-plugins`
   package that `Provides: kubernetes-cni`, because kind ships CNI v1.9.1
-  outside dpkg. A `force-confold` dpkg setting keeps kind's
-  `/etc/default/kubelet` when the kubelet package is installed. The source
+  outside dpkg. The source
   file `/opt/kubernetes-apt/kubernetes.list` is not enabled by the image: the
   lab copies it into `/etc/apt/sources.list.d/`, so the other labs never see
   the new packages. The layer adds about 33 MB (arm64) or 38 MB (amd64).
@@ -902,9 +901,11 @@ the e2e validation proves it.
   fail under Docker's containerd image store with multi-arch images, so
   the loader falls back to a single-platform `docker save` streamed into each
   node. If that save fails too, it pulls the platform again
-  (`docker pull --platform`) and retries the save once: with Docker 29,
-  `registry.k8s.io/etcd:3.7.0-0` once had a broken store entry that could not
-  be exported while `3.6.8-0` could, and this repull is meant to repair it.
+  (`docker pull --platform`) and retries the save once. That retry is cheap
+  but not a cure: on Docker 29.8.2, `registry.k8s.io/etcd:3.7.0-0` could not
+  be exported even after a fresh pull, while `3.6.8-0` could. A scenario that
+  needs such an image must handle a failed load itself; kubeadm-upgrade pulls
+  it inside the node, which needs internet at setup.
 - **Timeouts:**
   - node image prepare: 15m (only a first build per version is slow; e2e
     runs it before the scenario's own budget starts)
@@ -984,7 +985,10 @@ the e2e validation proves it.
      preloads the v1.37.1 control-plane images with `images`. Docker needs
      internet to pull them the first time; after that the lab runs offline. If
      an image cannot be loaded, setup pulls it inside the node and warns
-     (with what to do) when that fails too.
+     (with what to do) when that fails too. Setup also writes a
+     `force-confold` dpkg setting on both nodes, so installing the kubelet
+     package keeps kind's `/etc/default/kubelet`; the node image itself does
+     not carry it, so other labs see stock dpkg behaviour.
    - Task: upgrade both nodes to v1.37.1 with the real flow: `apt-get
      install kubeadm`, `kubeadm upgrade plan/apply`, drain, kubelet and
      kubectl packages, restart, uncordon, then `kubeadm upgrade node` on the
