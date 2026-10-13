@@ -71,6 +71,7 @@ spec:
   exclusive: true              # changes node or cluster-wide state
   cluster:
     workers: 1                 # default 0, a single node
+    controlPlanes: 1           # 1 (default) or 3, an HA cluster (see below)
     networking:
       disableDefaultCNI: true  # no CNI; nodes stay NotReady (see below)
     kubernetesVersion: v1.36.4 # default: the engine default
@@ -96,6 +97,19 @@ become Ready, so `kind create` runs with `--wait 0s` instead of waiting for
 them; setup must not assume Ready nodes (wait for the API server, and apply
 workloads that tolerate Pending pods, because `connectivity` checks report
 a non-running source pod as a failure, not an error).
+
+### HA clusters
+
+`cluster.controlPlanes: 3` creates three control-plane nodes behind a load
+balancer, for scenarios about etcd membership and joining control planes. The
+nodes are `controlplane`, `controlplane02` and `controlplane03`, and
+`controlplane` is the one `kubeadm init` ran on (`controlplane01` is not a
+name). Workers stay `node01` and so on. The load balancer container is not a
+node: it has no alias and `kubestronaut ssh` cannot reach it. Only 1 and 3 are
+accepted, because etcd needs an odd member count. An HA cluster of three
+control planes and one worker takes about 2 GiB of Docker memory and about
+70 seconds to create, and its first start pulls the load balancer image
+(`envoyproxy/envoy`), so it needs internet once.
 
 ### Templating
 
@@ -151,7 +165,7 @@ materialized scenario directory, with:
 | `KS_BIN` | path of the kubestronaut binary |
 | `KS_CLUSTER`, `KS_CONTEXT` | cluster name, context name |
 | `KS_SCENARIO_DIR` | the materialized scenario directory |
-| `KS_NODE_CONTROLPLANE`, `KS_NODE_NODE01`, ... | real node names |
+| `KS_NODE_CONTROLPLANE`, `KS_NODE_CONTROLPLANE02`, `KS_NODE_NODE01`, ... | real node names |
 | `KS_LIB` | a helper library to `source` |
 
 The library provides `ks_node <alias> <cmd...>` (run on a node through
@@ -221,11 +235,14 @@ solutions can rely on `vim`, `nano`, `less`, `etcdctl` and `etcdutl` (the
 etcd release that matches the cluster), `helm`, `nslookup`/`dig`, `ps` and
 `netstat` on every node, plus the kind image's `curl`, `jq` and `crictl`. The
 `bridge` CNI plugin is in `/opt/cni/bin`, and `ipvsadm` with its libraries is
-available offline as `dpkg -i /opt/pkgs/*.deb`. If a scenario needs another
-tool, add it to `internal/backend/kind/nodeimage/Dockerfile` (and to
-`nodeTools` if its absence should fail the build, or `nodeFiles` for a path)
-rather than installing it during setup: setup must not need internet, and
-every scenario should see the same node.
+available offline as `dpkg -i /opt/pkgs/*.deb`. The v1.36.4 image also holds
+kubeadm, kubelet and kubectl v1.37.1 as a local apt repository in
+`/opt/kubernetes-apt` (see `images.go`). A scenario enables it by copying
+`kubernetes.list` from there into `/etc/apt/sources.list.d/`. If a scenario
+needs another tool, add it to `internal/backend/kind/nodeimage/Dockerfile`
+(and to `nodeTools` if its absence should fail the build, or `nodeFiles` for a
+path) rather than installing it during setup: setup must not need internet,
+and every scenario should see the same node.
 
 ## Checks
 

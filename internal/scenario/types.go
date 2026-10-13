@@ -128,12 +128,20 @@ type Spec struct {
 
 // ClusterConf sizes the cluster a scenario needs.
 type ClusterConf struct {
+	// ControlPlanes is 1 (the default, also 0) or 3. Three make an HA cluster
+	// behind a load balancer; they are controlplane, controlplane02 and
+	// controlplane03.
+	ControlPlanes     int      `json:"controlPlanes,omitempty"`
 	Workers           int      `json:"workers,omitempty"`
 	KubernetesVersion string   `json:"kubernetesVersion,omitempty"`
 	KindConfigPatches []string `json:"kindConfigPatches,omitempty"`
 	// Networking passes the few kind networking options scenarios need.
 	Networking NetworkingConf `json:"networking,omitempty"`
 }
+
+// CPs is the number of control-plane nodes: 1 unless the scenario asks for an
+// HA cluster.
+func (c ClusterConf) CPs() int { return max(c.ControlPlanes, 1) }
 
 // NetworkingConf selects kind networking options.
 type NetworkingConf struct {

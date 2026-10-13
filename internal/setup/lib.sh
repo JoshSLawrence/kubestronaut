@@ -21,7 +21,7 @@ ks_node_name() {
   local var
   var="KS_NODE_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
   if [ -z "${!var:-}" ]; then
-    ks_log "unknown node alias '$1' (no \$$var): use controlplane or node01, node02..."
+    ks_log "unknown node alias '$1' (no \$$var): use controlplane, controlplane02..., or node01, node02..."
     return 1
   fi
   printf '%s\n' "${!var}"

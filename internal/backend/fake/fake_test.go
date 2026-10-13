@@ -10,6 +10,29 @@ import (
 	"github.com/JoshSLawrence/kubestronaut/internal/execx"
 )
 
+func TestFakeHANodes(t *testing.T) {
+	f := New()
+	if err := f.Create(context.Background(), backend.ClusterSpec{Name: "ks-a", ControlPlanes: 3, Workers: 1}); err != nil {
+		t.Fatal(err)
+	}
+	nodes, _ := f.Nodes(context.Background(), "ks-a")
+	var got []string
+	for _, n := range nodes {
+		got = append(got, n.Alias+"="+n.Name)
+	}
+	want := "controlplane=ks-a-control-plane,controlplane02=ks-a-control-plane2,controlplane03=ks-a-control-plane3,node01=ks-a-worker"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("nodes: %v", got)
+	}
+	// An unset ControlPlanes still means one.
+	if err := f.Create(context.Background(), backend.ClusterSpec{Name: "ks-b"}); err != nil {
+		t.Fatal(err)
+	}
+	if nodes, _ := f.Nodes(context.Background(), "ks-b"); len(nodes) != 1 {
+		t.Fatalf("nodes: %+v", nodes)
+	}
+}
+
 func TestFakeLifecycle(t *testing.T) {
 	f := New()
 	ctx := context.Background()

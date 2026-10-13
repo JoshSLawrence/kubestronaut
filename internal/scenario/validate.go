@@ -59,6 +59,9 @@ func (s *Scenario) Validate(p *Pack) []error {
 	if s.Spec.Cluster.Workers < 0 {
 		add("spec.cluster.workers must not be negative")
 	}
+	if cps := s.Spec.Cluster.ControlPlanes; cps != 0 && cps != 1 && cps != 3 {
+		add("spec.cluster.controlPlanes is %d, but must be 1 or 3: etcd needs an odd member count, and more nodes will not fit typical Docker memory", cps)
+	}
 	for _, img := range s.Spec.Images {
 		if strings.TrimSpace(img) == "" {
 			add("spec.images contains an empty entry")
@@ -216,15 +219,16 @@ func (s *Scenario) validateNodes() []error {
 			aliases[peek.Node] = true
 		}
 	}
+	cps := s.Spec.Cluster.CPs()
 	for a := range aliases {
-		if a == backend.ControlPlaneAlias {
+		if n, ok := backend.ControlPlaneIndex(a); ok && n <= cps {
 			continue
 		}
-		n, ok := backend.WorkerIndex(a)
-		if !ok || n > s.Spec.Cluster.Workers {
-			errs = append(errs, fmt.Errorf("%s: unknown node alias %q: the cluster has %d worker(s), so use controlplane or node01..%s",
-				s.ID, a, s.Spec.Cluster.Workers, backend.WorkerAlias(max(s.Spec.Cluster.Workers, 1))))
+		if n, ok := backend.WorkerIndex(a); ok && n <= s.Spec.Cluster.Workers {
+			continue
 		}
+		errs = append(errs, fmt.Errorf("%s: unknown node alias %q: the cluster has %d control plane(s) and %d worker(s), so use %s or node01..%s",
+			s.ID, a, cps, s.Spec.Cluster.Workers, controlPlaneAliasRange(cps), backend.WorkerAlias(max(s.Spec.Cluster.Workers, 1))))
 	}
 	return errs
 }
@@ -283,4 +287,12 @@ func (s *Scenario) validateSetupPaths() []error {
 		}
 	}
 	return errs
+}
+
+// controlPlaneAliasRange names the control-plane aliases a cluster has.
+func controlPlaneAliasRange(cps int) string {
+	if cps <= 1 {
+		return backend.ControlPlaneAlias
+	}
+	return backend.ControlPlaneAlias + " or " + backend.ControlPlaneAliasN(2) + ".." + backend.ControlPlaneAliasN(cps)
 }

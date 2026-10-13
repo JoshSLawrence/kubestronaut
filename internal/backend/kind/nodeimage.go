@@ -33,14 +33,30 @@ var nodeTools = []string{"vim", "nano", "less", "etcdctl", "etcdutl", "helm", "d
 // the parts of it that are not commands on PATH.
 var nodeFiles = []string{"/opt/cni/bin/bridge", "/opt/pkgs/ipvsadm_*.deb"}
 
+// nodeFilesFor adds the offline apt repository for the versions that have one.
+func nodeFilesFor(version string) []string {
+	if version == "" {
+		version = DefaultVersion
+	}
+	files := append([]string(nil), nodeFiles...)
+	if apt, ok := aptReleases[version]; ok {
+		files = append(files,
+			"/opt/kubernetes-apt/"+apt.Minor+"/Packages",
+			"/opt/kubernetes-apt/kubernetes.list",
+			"/var/lib/dpkg/info/kind-cni-plugins.list")
+	}
+	return files
+}
+
 // NodeImageLabel marks every image kubestronaut builds so stale ones can be
 // found and pruned.
 const NodeImageLabel = "io.kubestronaut.node"
 
 // NodeImageTag is the local tag of the image built for version. The suffix
 // hashes the Dockerfile and base image so changing either rebuilds instead of
-// reusing a stale image. Package versions are deliberately not hashed: they
-// cannot be known offline, and patch-level drift does not matter for practice.
+// reusing a stale image. Debian package versions are deliberately not hashed:
+// they cannot be known offline, and patch-level drift does not matter for
+// practice. The pinned downloads (etcd, the next-minor Kubernetes debs) are.
 func NodeImageTag(version string) (string, error) {
 	base, err := ResolveImage(version, "")
 	if err != nil {
@@ -50,7 +66,7 @@ func NodeImageTag(version string) (string, error) {
 		version = DefaultVersion
 	}
 	h := sha256.New()
-	etcd, err := etcdFor(version)
+	args, err := buildArgs(version)
 	if err != nil {
 		return "", err
 	}
@@ -58,7 +74,7 @@ func NodeImageTag(version string) (string, error) {
 	h.Write([]byte{0})
 	h.Write([]byte(base))
 	h.Write([]byte{0})
-	h.Write([]byte(strings.Join(etcd.buildArgs(), "\n")))
+	h.Write([]byte(strings.Join(args, "\n")))
 	return fmt.Sprintf("%s:%s-%s", NodeImageRepo, version, hex.EncodeToString(h.Sum(nil))[:12]), nil
 }
 
@@ -73,9 +89,29 @@ func etcdFor(version string) (etcdRelease, error) {
 	return r, nil
 }
 
-// buildArgs are the docker build arguments that select the etcd tools.
-func (r etcdRelease) buildArgs() []string {
-	return []string{"ETCD_VERSION=" + r.Version, "ETCD_SHA256_AMD64=" + r.SHA256AMD64, "ETCD_SHA256_ARM64=" + r.SHA256ARM64}
+// buildArgs are the docker build arguments that select the etcd tools and the
+// offline apt repository of the next minor. The apt arguments are empty for a
+// version without an aptReleases entry, which makes the Dockerfile skip the
+// step. NodeImageTag hashes exactly what the build is given, so the two
+// cannot drift apart.
+func buildArgs(version string) ([]string, error) {
+	etcd, err := etcdFor(version)
+	if err != nil {
+		return nil, err
+	}
+	if version == "" {
+		version = DefaultVersion
+	}
+	apt := aptReleases[version]
+	return []string{
+		"ETCD_VERSION=" + etcd.Version,
+		"ETCD_SHA256_AMD64=" + etcd.SHA256AMD64,
+		"ETCD_SHA256_ARM64=" + etcd.SHA256ARM64,
+		"K8S_APT_MINOR=" + apt.Minor,
+		"K8S_APT_VERSION=" + apt.Version,
+		"K8S_APT_SHA256_AMD64=" + pairs(apt.SHA256AMD64),
+		"K8S_APT_SHA256_ARM64=" + pairs(apt.SHA256ARM64),
+	}, nil
 }
 
 // imageExists distinguishes "no such image" from docker itself failing, so a
@@ -131,6 +167,11 @@ func (k *Kind) StaleNodeImages(ctx context.Context) ([]string, error) {
 // Prepare implements backend.Backend by building the node image the first
 // time a Kubernetes version is used. An explicit --node-image is used as is.
 func (k *Kind) Prepare(ctx context.Context, s backend.ClusterSpec, notify func(string)) error {
+	if s.ControlPlanes > 1 {
+		if err := k.ensureLoadBalancerImage(ctx, notify); err != nil {
+			return err
+		}
+	}
 	if s.NodeImage != "" {
 		return nil
 	}
@@ -145,6 +186,23 @@ func (k *Kind) Prepare(ctx context.Context, s backend.ClusterSpec, notify func(s
 	return err
 }
 
+// ensureLoadBalancerImage pulls the image kind runs as the load balancer of an
+// HA cluster. kind would pull it during create, which counts against the
+// create timeout and fails without a clear reason on a slow link.
+func (k *Kind) ensureLoadBalancerImage(ctx context.Context, notify func(string)) error {
+	ok, err := k.imageExists(ctx, LoadBalancerImage)
+	if err != nil || ok {
+		return err
+	}
+	if notify != nil {
+		notify("Pulling the HA load balancer image " + LoadBalancerImage + " (needs internet)")
+	}
+	if _, err := k.run(ctx, "docker", "pull", LoadBalancerImage); err != nil {
+		return fmt.Errorf("pull the HA load balancer image: %w: check your internet connection and retry", err)
+	}
+	return nil
+}
+
 // buildNodeImage returns the node image tag for version, building it if it is
 // missing. Create calls it as well as Prepare, so it must be cheap when the
 // image already exists.
@@ -157,12 +215,12 @@ func (k *Kind) buildNodeImage(ctx context.Context, version string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	etcd, err := etcdFor(version)
+	extra, err := buildArgs(version)
 	if err != nil {
 		return "", err
 	}
 	args := []string{"build", "--build-arg", "BASE=" + base}
-	for _, a := range etcd.buildArgs() {
+	for _, a := range extra {
 		args = append(args, "--build-arg", a)
 	}
 	args = append(args, "-t", tag+"-candidate", "-")
@@ -196,7 +254,7 @@ func (k *Kind) buildNodeImage(ctx context.Context, version string) (string, erro
 		_, _ = k.Runner.Run(cctx, execx.Cmd{Name: "docker", Args: []string{"rmi", candidate}})
 	}()
 	check := "for t in " + strings.Join(nodeTools, " ") + `; do command -v "$t" >/dev/null || echo "$t"; done` +
-		"; for f in " + strings.Join(nodeFiles, " ") + `; do ls $f >/dev/null 2>&1 || echo "$f"; done`
+		"; for f in " + strings.Join(nodeFilesFor(version), " ") + `; do ls $f >/dev/null 2>&1 || echo "$f"; done`
 	res, err = k.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"run", "--rm", "--entrypoint", "bash", candidate, "-c", check}})
 	if err != nil {
 		return "", fmt.Errorf("docker run: %w", err)

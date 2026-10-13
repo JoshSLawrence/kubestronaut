@@ -142,6 +142,34 @@ func TestNodesAliases(t *testing.T) {
 	}
 }
 
+func TestNodesHAClusterSkipsTheLoadBalancer(t *testing.T) {
+	k, f := newKind()
+	f.Respond([]string{"kind", "get", "nodes"}, execx.Result{Stdout: []byte(
+		"ks-x-control-plane3\nks-x-external-load-balancer\nks-x-worker\nks-x-control-plane2\nks-x-control-plane\n")}, nil)
+	nodes, err := k.Nodes(context.Background(), "ks-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, n := range nodes {
+		got = append(got, n.Alias+"="+n.Name+":"+string(n.Role))
+	}
+	want := []string{
+		"controlplane=ks-x-control-plane:control-plane",
+		"controlplane02=ks-x-control-plane2:control-plane",
+		"controlplane03=ks-x-control-plane3:control-plane",
+		"node01=ks-x-worker:worker",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("nodes:\n got %v\nwant %v", got, want)
+	}
+	for _, n := range nodes {
+		if name, _ := backend.NodeName("ks-x", n.Alias); name != n.Name {
+			t.Errorf("%s: NodeName=%s listed=%s", n.Alias, name, n.Name)
+		}
+	}
+}
+
 func TestNodesErrors(t *testing.T) {
 	k, f := newKind()
 	f.Respond([]string{"kind", "get", "nodes"}, execx.Result{Stdout: []byte("")}, nil)
@@ -229,6 +257,39 @@ func TestLoadImages(t *testing.T) {
 	}
 	if New("/s").Name() != "kind" {
 		t.Fatal("name")
+	}
+}
+
+func TestLoadImagesRepullsWhenTheSaveFails(t *testing.T) {
+	k, f := newKind()
+	ctx := context.Background()
+	f.Respond([]string{"kind", "load", "docker-image", "broken:1"}, execx.Result{ExitCode: 1, Stderr: []byte("content digest not found")}, nil)
+	f.Once([]string{"docker", "save"}, execx.Result{ExitCode: 1, Stderr: []byte("no suitable export target found")}, nil)
+	f.Respond([]string{"docker", "save"}, execx.Result{Stdout: []byte("TARBALL")}, nil)
+	f.Respond([]string{"kind", "get", "nodes"}, execx.Result{Stdout: []byte("ks-x-control-plane\n")}, nil)
+	if err := k.LoadImages(ctx, "ks-x", []string{"broken:1"}); err != nil {
+		t.Fatalf("the repull must rescue the load: %v", err)
+	}
+	lines := strings.Join(f.Lines(), "\n")
+	pull := "docker pull --platform linux/" + runtime.GOARCH + " broken:1"
+	if strings.Count(lines, "docker save") != 2 || !strings.Contains(lines, pull) {
+		t.Fatalf("want save, %s, save:\n%s", pull, lines)
+	}
+	if strings.Index(lines, "docker save") > strings.Index(lines, pull) {
+		t.Fatalf("the pull must come after the failed save:\n%s", lines)
+	}
+
+	// A failing repull is reported and not retried.
+	k, f = newKind()
+	f.Respond([]string{"kind", "load", "docker-image", "broken:1"}, execx.Result{ExitCode: 1}, nil)
+	f.Respond([]string{"docker", "save"}, execx.Result{ExitCode: 1, Stderr: []byte("save failed")}, nil)
+	f.Respond([]string{"docker", "pull", "--platform"}, execx.Result{ExitCode: 1, Stderr: []byte("offline")}, nil)
+	err := k.LoadImages(ctx, "ks-x", []string{"broken:1"})
+	if err == nil || !strings.Contains(err.Error(), "save failed") || !strings.Contains(err.Error(), "offline") {
+		t.Fatalf("err: %v", err)
+	}
+	if strings.Count(strings.Join(f.Lines(), "\n"), "docker save") != 1 {
+		t.Fatalf("no second save after a failed pull: %v", f.Lines())
 	}
 }
 

@@ -1,0 +1,180 @@
+apiVersion: kubestronaut/v1alpha1
+kind: Scenario
+metadata:
+  name: kubeadm-upgrade
+  title: Upgrade a kubeadm cluster to the next minor version
+  domain: cluster-architecture
+  difficulty: hard
+  tags: [kubeadm, upgrade, apt, drain, cluster-lifecycle]
+spec:
+  timeLimit: 20m
+  weight: 8
+  context: k8s-upgrade
+  namespaces: [apps]
+  exclusive: true
+  cluster:
+    workers: 1
+    kubernetesVersion: v1.36.4
+  # The v1.37.1 control-plane images, so kubeadm upgrade apply needs no
+  # internet. They are loaded into every node; only the worker's kube-proxy
+  # needs it there.
+  images:
+    - registry.k8s.io/kube-apiserver:v1.37.1
+    - registry.k8s.io/kube-controller-manager:v1.37.1
+    - registry.k8s.io/kube-scheduler:v1.37.1
+    - registry.k8s.io/kube-proxy:v1.37.1
+    - registry.k8s.io/coredns/coredns:v1.14.6
+    - registry.k8s.io/etcd:3.7.0-0
+    - registry.k8s.io/e2e-test-images/agnhost:2.61
+  prompt: prompt.md
+  hints:
+    - "`kubeadm upgrade plan` shows what can be upgraded. The control plane and
+      the other nodes are upgraded with different kubeadm commands."
+    - "`apt-cache policy kubeadm` lists the versions the repository offers."
+    - The kubelet reads its unit files again only after `systemctl daemon-reload`,
+      and it runs the new binary only after a restart.
+  setup:
+    - manifest: setup/web.yaml
+    - wait:
+        ref: {kind: deployment, name: web, namespace: apps}
+        for: condition=Available
+    - script: setup/prepare.sh
+      timeout: 6m
+  checks:
+    - id: cp-ready
+      description: node controlplane is Ready
+      type: ready
+      ref: {kind: node, name: '{{node "controlplane"}}'}
+      retry: {attempts: 6, interval: 3s}
+    - id: node01-ready
+      description: node node01 is Ready
+      type: ready
+      ref: {kind: node, name: '{{node "node01"}}'}
+      retry: {attempts: 8, interval: 3s}
+    - id: web-available
+      description: deployment apps/web has 2 available replicas
+      type: ready
+      ref: {kind: deployment, name: web, namespace: apps}
+      minReady: 2
+      retry: {attempts: 8, interval: 3s}
+    - id: cp-kubeadm-pkg
+      description: controlplane has the v1.37.1 kubeadm package installed
+      type: nodeExec
+      node: controlplane
+      shell: |
+        test "$(dpkg-query -W -f='${Version}' kubeadm)" = 1.37.1-1.1
+        test "$(kubeadm version -o short)" = v1.37.1
+    - id: cluster-config
+      description: the cluster configuration stored in kube-system records v1.37.1
+      weight: 2
+      type: jsonPath
+      ref: {kind: configmap, name: kubeadm-config, namespace: kube-system}
+      path: '{.data.ClusterConfiguration}'
+      matches: 'kubernetesVersion: v1\.37\.1'
+      retry: {attempts: 6, interval: 3s}
+    - id: cp-static-pods
+      description: the control-plane static pod manifests run v1.37.1
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        for f in kube-apiserver kube-controller-manager kube-scheduler; do
+          grep -q ':v1\.37\.1$' /etc/kubernetes/manifests/$f.yaml || exit 1
+        done
+    - id: apiserver-running
+      description: the running kube-apiserver pod uses v1.37.1
+      type: jsonPath
+      ref: {kind: pod, namespace: kube-system, selector: component=kube-apiserver}
+      match: all
+      minItems: 1
+      path: '{.spec.containers[0].image}'
+      matches: ':v1\.37\.1$'
+      retry: {attempts: 8, interval: 3s}
+    - id: addons-upgraded
+      description: the cluster add-ons were upgraded with the control plane
+      weight: 2
+      type: nodeExec
+      node: controlplane
+      shell: |
+        proxy=$(kubectl -n kube-system get ds kube-proxy -o 'jsonpath={.spec.template.spec.containers[0].image}')
+        dns=$(kubectl -n kube-system get deploy coredns -o 'jsonpath={.spec.template.spec.containers[0].image}')
+        case "$proxy" in *:v1.37.1) ;; *) exit 1 ;; esac
+        case "$dns" in *:v1.14.6) ;; *) exit 1 ;; esac
+      retry: {attempts: 6, interval: 3s}
+    - id: etcd-upgraded
+      description: the etcd static pod runs the etcd release of v1.37.1
+      type: jsonPath
+      ref: {kind: pod, namespace: kube-system, selector: component=etcd}
+      match: all
+      minItems: 1
+      path: '{.spec.containers[0].image}'
+      matches: ':3\.7\.0-0$'
+      retry: {attempts: 8, interval: 3s}
+    - id: cp-kubelet
+      description: the kubelet on controlplane runs v1.37.1
+      weight: 2
+      type: jsonPath
+      ref: {kind: node, name: '{{node "controlplane"}}'}
+      path: '{.status.nodeInfo.kubeletVersion}'
+      equals: v1.37.1
+      retry: {attempts: 6, interval: 3s}
+    - id: node01-kubelet
+      description: the kubelet on node01 runs v1.37.1
+      weight: 2
+      type: jsonPath
+      ref: {kind: node, name: '{{node "node01"}}'}
+      path: '{.status.nodeInfo.kubeletVersion}'
+      equals: v1.37.1
+      retry: {attempts: 6, interval: 3s}
+    - id: node01-pkgs
+      description: node01 has the v1.37.1 kubeadm and kubelet packages installed
+      type: nodeExec
+      node: node01
+      shell: |
+        test "$(dpkg-query -W -f='${Version}' kubeadm)" = 1.37.1-1.1
+        test "$(dpkg-query -W -f='${Version}' kubelet)" = 1.37.1-1.1
+    - id: kubectl-pkg
+      description: controlplane has the v1.37.1 kubectl package installed
+      type: nodeExec
+      node: controlplane
+      shell: |
+        test "$(dpkg-query -W -f='${Version}' kubectl)" = 1.37.1-1.1
+    - id: cp-schedulable
+      description: controlplane accepts new pods
+      type: jsonPath
+      ref: {kind: node, name: '{{node "controlplane"}}'}
+      path: '{.spec.unschedulable}'
+      empty: true
+    - id: node01-schedulable
+      description: node01 accepts new pods
+      type: jsonPath
+      ref: {kind: node, name: '{{node "node01"}}'}
+      path: '{.spec.unschedulable}'
+      empty: true
+    - id: node01-config-upgraded
+      description: node01's kubelet configuration was regenerated for v1.37.1
+      type: nodeExec
+      node: node01
+      shell: |
+        ls -d /etc/kubernetes/tmp/kubeadm-kubelet-config-* >/dev/null
+    - id: cp-upgrade-backup
+      description: the control-plane static pod manifests were replaced by an upgrade
+      type: nodeExec
+      node: controlplane
+      shell: |
+        ls -d /etc/kubernetes/tmp/kubeadm-backup-manifests-* >/dev/null
+    - id: web-rescheduled
+      description: both nodes were cordoned during the upgrade and the apps/web pods were recreated
+      type: script
+      path: checks/web-rescheduled.sh
+  solution:
+    script: solution/solve.sh
+    readme: solution/README.md
+  validation:
+    passBeforeSolution:
+      - cp-ready
+      - node01-ready
+      - web-available
+      - cp-schedulable
+      - node01-schedulable
+    timeout: 25m
