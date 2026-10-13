@@ -622,9 +622,26 @@ func (l *Lab) RunSolution(ctx context.Context) error {
 		_, _ = l.Out.Write(res.Stderr)
 	}
 	if res.ExitCode != 0 {
-		return fmt.Errorf("solution script exited %d: %s", res.ExitCode, lastLines(string(res.Stderr)+string(res.Stdout), 8))
+		return fmt.Errorf("solution script exited %d:\n%s", res.ExitCode, failureOutput(res))
 	}
 	return nil
+}
+
+// failureOutput keeps the tails of stderr and stdout apart. Joined, a chatty
+// stdout (kubeadm prints its whole preflight report there) pushed the actual
+// error on stderr out of the window.
+func failureOutput(res execx.Result) string {
+	var parts []string
+	if s := strings.TrimSpace(string(res.Stderr)); s != "" {
+		parts = append(parts, "stderr:\n"+lastLines(s, 20))
+	}
+	if s := strings.TrimSpace(string(res.Stdout)); s != "" {
+		parts = append(parts, "stdout:\n"+lastLines(s, 8))
+	}
+	if len(parts) == 0 {
+		return "(no output)"
+	}
+	return strings.Join(parts, "\n")
 }
 
 func lastLines(s string, n int) string {

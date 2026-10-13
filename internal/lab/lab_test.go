@@ -454,6 +454,17 @@ func TestRunSolutionAndSSH(t *testing.T) {
 	if err := f.lab.RunSolution(ctx); err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("failing solution: %v", err)
 	}
+	// A long stdout must not push the stderr error out of the message.
+	chatty := strings.Repeat("CGROUPS_X: enabled\n", 40)
+	f.run.Respond([]string{"bash"}, execx.Result{ExitCode: 1, Stdout: []byte(chatty),
+		Stderr: []byte("[ERROR SystemVerification]: boom\n")}, nil)
+	if err := f.lab.RunSolution(ctx); err == nil || !strings.Contains(err.Error(), "[ERROR SystemVerification]: boom") {
+		t.Fatalf("stderr lost behind stdout: %v", err)
+	}
+	f.run.Respond([]string{"bash"}, execx.Result{ExitCode: 1}, nil)
+	if err := f.lab.RunSolution(ctx); err == nil || !strings.Contains(err.Error(), "(no output)") {
+		t.Fatalf("silent failure: %v", err)
+	}
 	f.run.Respond([]string{"bash"}, execx.Result{}, errors.New("no bash"))
 	if err := f.lab.RunSolution(ctx); err == nil {
 		t.Fatal("run error")
