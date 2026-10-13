@@ -78,3 +78,41 @@ func TestBuildConfigDisableDefaultCNI(t *testing.T) {
 		t.Fatalf("default config must not mention networking:\n%s", got)
 	}
 }
+
+func TestBuildConfigMountsIntoEveryNode(t *testing.T) {
+	got := string(buildConfig(backend.ClusterSpec{ControlPlanes: 3, Workers: 1}, "img",
+		[]Mount{{HostPath: "/boot/config-6.1", ContainerPath: "/boot/config-6.1"}}))
+	want := "    extraMounts:\n      - hostPath: \"/boot/config-6.1\"\n        containerPath: \"/boot/config-6.1\"\n        readOnly: true\n"
+	if strings.Count(got, want) != 4 {
+		t.Fatalf("each of the 4 nodes needs the mount:\n%s", got)
+	}
+	if strings.Contains(string(BuildConfig(backend.ClusterSpec{}, "img")), "extraMounts") {
+		t.Fatal("BuildConfig must not add mounts")
+	}
+}
+
+func TestKernelConfigMounts(t *testing.T) {
+	release := func(string) ([]byte, error) { return []byte("6.17.0-1022-azure\n"), nil }
+	exists := func(string) (os.FileInfo, error) { return nil, nil }
+	missing := func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+
+	got := kernelConfigMounts("linux", "", release, exists)
+	if len(got) != 1 || got[0].HostPath != "/boot/config-6.17.0-1022-azure" || got[0].ContainerPath != got[0].HostPath {
+		t.Fatalf("linux host: %+v", got)
+	}
+	if got := kernelConfigMounts("linux", "unix:///var/run/docker.sock", release, exists); len(got) != 1 {
+		t.Fatalf("a local socket is still this kernel: %+v", got)
+	}
+	for name, m := range map[string][]Mount{
+		"darwin":        kernelConfigMounts("darwin", "", release, exists),
+		"remote daemon": kernelConfigMounts("linux", "tcp://10.0.0.5:2376", release, exists),
+		"no config":     kernelConfigMounts("linux", "", release, missing),
+		"no osrelease": kernelConfigMounts("linux", "", func(string) ([]byte, error) {
+			return nil, os.ErrNotExist
+		}, exists),
+	} {
+		if m != nil {
+			t.Errorf("%s: want no mounts, got %+v", name, m)
+		}
+	}
+}

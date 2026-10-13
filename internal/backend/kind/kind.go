@@ -85,7 +85,7 @@ func (k *Kind) Create(ctx context.Context, s backend.ClusterSpec) error {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 	cfg := filepath.Join(dir, "kind-"+s.Name+".yaml")
-	if err := os.WriteFile(cfg, BuildConfig(s, image), 0o600); err != nil {
+	if err := os.WriteFile(cfg, buildConfig(s, image, hostMounts()), 0o600); err != nil {
 		return fmt.Errorf("write kind config: %w", err)
 	}
 	wait := WaitForControlPlane
