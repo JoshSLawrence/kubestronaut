@@ -899,7 +899,12 @@ the e2e validation proves it.
 - **Images.** For each image in `images`: `docker pull` it if it is not
   present, then `kind load docker-image`. If loading fails, a warning is
   printed and nodes pull the image themselves. Known risk: `kind load` can
-  fail under Docker's containerd image store with multi-arch images.
+  fail under Docker's containerd image store with multi-arch images, so
+  the loader falls back to a single-platform `docker save` streamed into each
+  node. If that save fails too, it pulls the platform again
+  (`docker pull --platform`) and retries the save once: with Docker 29,
+  `registry.k8s.io/etcd:3.7.0-0` once had a broken store entry that could not
+  be exported while `3.6.8-0` could, and this repull is meant to repair it.
 - **Timeouts:**
   - node image prepare: 15m (only a first build per version is slow; e2e
     runs it before the scenario's own budget starts)
@@ -976,8 +981,10 @@ the e2e validation proves it.
    nodes.
    - Setup: the node image holds a local apt repository of the v1.37 package
      line (see "Node image build"); setup enables it on both nodes and
-     preloads the v1.37.1 control-plane images with `images`, so nothing needs
-     internet.
+     preloads the v1.37.1 control-plane images with `images`. Docker needs
+     internet to pull them the first time; after that the lab runs offline. If
+     an image cannot be loaded, setup pulls it inside the node and warns
+     (with what to do) when that fails too.
    - Task: upgrade both nodes to v1.37.1 with the real flow: `apt-get
      install kubeadm`, `kubeadm upgrade plan/apply`, drain, kubelet and
      kubectl packages, restart, uncordon, then `kubeadm upgrade node` on the

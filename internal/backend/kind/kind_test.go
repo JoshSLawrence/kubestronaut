@@ -260,6 +260,39 @@ func TestLoadImages(t *testing.T) {
 	}
 }
 
+func TestLoadImagesRepullsWhenTheSaveFails(t *testing.T) {
+	k, f := newKind()
+	ctx := context.Background()
+	f.Respond([]string{"kind", "load", "docker-image", "broken:1"}, execx.Result{ExitCode: 1, Stderr: []byte("content digest not found")}, nil)
+	f.Once([]string{"docker", "save"}, execx.Result{ExitCode: 1, Stderr: []byte("no suitable export target found")}, nil)
+	f.Respond([]string{"docker", "save"}, execx.Result{Stdout: []byte("TARBALL")}, nil)
+	f.Respond([]string{"kind", "get", "nodes"}, execx.Result{Stdout: []byte("ks-x-control-plane\n")}, nil)
+	if err := k.LoadImages(ctx, "ks-x", []string{"broken:1"}); err != nil {
+		t.Fatalf("the repull must rescue the load: %v", err)
+	}
+	lines := strings.Join(f.Lines(), "\n")
+	pull := "docker pull --platform linux/" + runtime.GOARCH + " broken:1"
+	if strings.Count(lines, "docker save") != 2 || !strings.Contains(lines, pull) {
+		t.Fatalf("want save, %s, save:\n%s", pull, lines)
+	}
+	if strings.Index(lines, "docker save") > strings.Index(lines, pull) {
+		t.Fatalf("the pull must come after the failed save:\n%s", lines)
+	}
+
+	// A failing repull is reported and not retried.
+	k, f = newKind()
+	f.Respond([]string{"kind", "load", "docker-image", "broken:1"}, execx.Result{ExitCode: 1}, nil)
+	f.Respond([]string{"docker", "save"}, execx.Result{ExitCode: 1, Stderr: []byte("save failed")}, nil)
+	f.Respond([]string{"docker", "pull", "--platform"}, execx.Result{ExitCode: 1, Stderr: []byte("offline")}, nil)
+	err := k.LoadImages(ctx, "ks-x", []string{"broken:1"})
+	if err == nil || !strings.Contains(err.Error(), "save failed") || !strings.Contains(err.Error(), "offline") {
+		t.Fatalf("err: %v", err)
+	}
+	if strings.Count(strings.Join(f.Lines(), "\n"), "docker save") != 1 {
+		t.Fatalf("no second save after a failed pull: %v", f.Lines())
+	}
+}
+
 func TestLoadImagesFallsBackToSinglePlatformSave(t *testing.T) {
 	k, f := newKind()
 	ctx := context.Background()

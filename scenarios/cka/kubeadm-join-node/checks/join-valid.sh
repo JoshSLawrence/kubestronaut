@@ -17,8 +17,8 @@ case "$line" in
     exit 0
     ;;
 esac
-token=$(printf '%s\n' "$line" | sed -n 's/.*--token \([a-z0-9]\{6\}\.[a-z0-9]\{16\}\).*/\1/p')
-hash=$(printf '%s\n' "$line" | sed -n 's/.*--discovery-token-ca-cert-hash sha256:\([a-f0-9]\{64\}\).*/\1/p')
+token=$(printf '%s\n' "$line" | sed -n 's/.*--token[ =]\([a-z0-9]\{6\}\.[a-z0-9]\{16\}\).*/\1/p')
+hash=$(printf '%s\n' "$line" | sed -n 's/.*--discovery-token-ca-cert-hash[ =]sha256:\([a-f0-9]\{64\}\).*/\1/p')
 endpoint=$(printf '%s\n' "$line" | sed -n 's/.*kubeadm join \([^ ]*:6443\).*/\1/p')
 if [ -z "$token" ] || [ -z "$hash" ] || [ -z "$endpoint" ]; then
   echo "the join command lacks an endpoint, a token or a CA hash"
@@ -48,12 +48,22 @@ if [ "$hash" != "$want" ]; then
   exit 0
 fi
 cfg=$(kubectl -n kube-system get cm kubeadm-config -o 'jsonpath={.data.ClusterConfiguration}' | sed -n 's/^controlPlaneEndpoint: //p')
-if [ "$endpoint" != "$cfg" ]; then
+ips=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o 'jsonpath={.items[*].status.addresses[?(@.type=="InternalIP")].address}')
+ok=false
+[ "$endpoint" = "$cfg" ] && ok=true
+for ip in $ips; do
+  [ "$endpoint" = "$ip:6443" ] && ok=true
+done
+if [ "$ok" != true ]; then
   echo "the endpoint is not the cluster's control plane endpoint"
+  exit 0
 fi
+echo OK
 REMOTE
-msg=$(printf '%s\n' "$remote" | ks_node controlplane bash -s || true)
-if [ -n "$msg" ]; then
-  echo "$msg" >&2
+out=$(printf '%s\n' "$remote" | ks_node controlplane bash -s || true)
+# The remote script ends with OK only when every test passed, so a command
+# that failed to run cannot pass as an empty report.
+if [ "$(printf '%s\n' "$out" | tail -n 1)" != OK ]; then
+  echo "${out:-the join file could not be checked on controlplane}" >&2
   exit 1
 fi

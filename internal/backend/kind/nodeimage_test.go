@@ -181,7 +181,7 @@ func TestNodeFilesForVersionWithAptRepo(t *testing.T) {
 func TestDockerfileApt(t *testing.T) {
 	df := string(nodeDockerfile)
 	for _, want := range []string{"apt-utils", "ARG K8S_APT_MINOR", "apt-ftparchive packages", "apt-ftparchive release",
-		"[trusted=yes]", "Provides: kubernetes-cni", "force-confold"} {
+		"[trusted=yes]", "Provides: kubernetes-cni"} {
 		if !strings.Contains(df, want) {
 			t.Errorf("Dockerfile lacks %q", want)
 		}

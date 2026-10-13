@@ -262,9 +262,19 @@ func (k *Kind) LoadImages(ctx context.Context, cluster string, images []string) 
 
 // loadViaSave streams a single-platform `docker save` into every node.
 func (k *Kind) loadViaSave(ctx context.Context, cluster, img string) error {
-	res, err := k.run(ctx, "docker", "save", "--platform", "linux/"+runtime.GOARCH, img)
+	platform := "linux/" + runtime.GOARCH
+	res, err := k.run(ctx, "docker", "save", "--platform", platform, img)
 	if err != nil {
-		return err
+		// Docker's containerd image store can hold an entry for an image
+		// whose layers it cannot export (seen with registry.k8s.io/etcd
+		// 3.7.0-0 while 3.6.8-0 exported fine). Pulling the platform again
+		// repairs the entry; try the save once more.
+		if _, perr := k.run(ctx, "docker", "pull", "--platform", platform, img); perr != nil {
+			return errors.Join(err, perr)
+		}
+		if res, err = k.run(ctx, "docker", "save", "--platform", platform, img); err != nil {
+			return err
+		}
 	}
 	nodes, err := k.Nodes(ctx, cluster)
 	if err != nil {

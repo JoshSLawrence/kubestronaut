@@ -19,6 +19,10 @@ etcdctl member remove <id of the member named after controlplane03>
 kubectl delete node <controlplane03's node name>
 ```
 
+Take care which member you remove: etcd has three members and needs two for
+quorum, so removing a healthy one while another is down loses quorum and the
+cluster stops answering. `kubestronaut reset` starts the lab over.
+
 Do this first. If you join before removing the member, the old member is
 still registered for the same node. The fresh etcd on the wiped disk
 conflicts with it and crashes, and the join hangs until its timeouts expire.

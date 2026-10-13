@@ -151,8 +151,20 @@ spec:
       ref: {kind: node, name: '{{node "node01"}}'}
       path: '{.spec.unschedulable}'
       empty: true
+    - id: node01-config-upgraded
+      description: node01's kubelet configuration was regenerated for v1.37.1
+      type: nodeExec
+      node: node01
+      shell: |
+        ls -d /etc/kubernetes/tmp/kubeadm-kubelet-config-* >/dev/null
+    - id: cp-upgrade-backup
+      description: the control-plane static pod manifests were replaced by an upgrade
+      type: nodeExec
+      node: controlplane
+      shell: |
+        ls -d /etc/kubernetes/tmp/kubeadm-backup-manifests-* >/dev/null
     - id: web-rescheduled
-      description: the pods of apps/web were moved off node01 during the upgrade
+      description: both nodes were cordoned during the upgrade and the apps/web pods were recreated
       type: script
       path: checks/web-rescheduled.sh
   solution:

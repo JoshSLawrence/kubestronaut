@@ -17,6 +17,10 @@ for n in controlplane node01; do
   # update does not wait for a network that may not be there.
   ks_node "$n" sh -c 'cp /opt/kubernetes-apt/kubernetes.list /etc/apt/sources.list.d/kubernetes.list &&
     mv /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list.d/debian.sources.disabled'
+  # kind keeps its own /etc/default/kubelet (--runtime-cgroups), which the
+  # kubelet package would ask about. Keep the existing file without a prompt;
+  # only this lab changes dpkg's behaviour.
+  ks_node "$n" sh -c 'echo force-confold > /etc/dpkg/dpkg.cfg.d/kubestronaut-confold'
 done
 
 # kubeadm upgrade apply wants these images. They are preloaded through
@@ -28,12 +32,12 @@ for img in registry.k8s.io/kube-apiserver:v1.37.1 registry.k8s.io/kube-controlle
   if ! ks_node controlplane crictl inspecti "$img" >/dev/null 2>&1; then
     ks_log "$img was not preloaded: pulling it on controlplane"
     ks_node controlplane crictl pull "$img" >/dev/null ||
-      ks_log "warning: could not pull $img; kubeadm will need internet to upgrade"
+      ks_log "warning: $img is not on controlplane and could not be pulled. Reconnect to the internet and run: kubestronaut ssh controlplane -- crictl pull $img (or run kubestronaut reset while online); otherwise kubeadm upgrade apply cannot fetch it"
   fi
 done
 if ! ks_node node01 crictl inspecti registry.k8s.io/kube-proxy:v1.37.1 >/dev/null 2>&1; then
   ks_node node01 crictl pull registry.k8s.io/kube-proxy:v1.37.1 >/dev/null ||
-    ks_log "warning: could not pull kube-proxy:v1.37.1 on node01"
+    ks_log "warning: kube-proxy:v1.37.1 is not on node01 and could not be pulled. Reconnect to the internet and run: kubestronaut ssh node01 -- crictl pull registry.k8s.io/kube-proxy:v1.37.1 (or run kubestronaut reset while online)"
 fi
 
 # The upgrade must evict these pods from node01 at some point. Pods that a

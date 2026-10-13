@@ -114,7 +114,6 @@ RUN set -eux; \
   apt-ftparchive release . > /tmp/Release; mv /tmp/Release Release; \
   printf 'deb [trusted=yes] file:%s ./\n' "$repo" > /opt/kubernetes-apt/kubernetes.list; \
   mkdir -p /var/lib/apt/lists/partial; \
-  echo force-confold > /etc/dpkg/dpkg.cfg.d/kubestronaut-confold; \
   shim=$(mktemp -d); mkdir "$shim/DEBIAN"; \
   printf '%s\n' \
     'Package: kind-cni-plugins' \

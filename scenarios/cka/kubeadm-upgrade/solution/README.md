@@ -62,7 +62,9 @@ is restarting fails with `forbidden` errors.
   ones in the deb, and dpkg keeps kind's `/etc/default/kubelet`
   (`--runtime-cgroups`), so the new kubelet starts with kind's settings.
 - The control-plane images of v1.37.1 are loaded into the nodes when the
-  cluster is created, so `apply` needs no internet.
+  cluster is created, which needs internet the first time (Docker pulls them).
+  If one could not be loaded, setup tells you; `apply` then needs internet
+  to fetch it.
 
 ## Spike results
 
@@ -82,7 +84,3 @@ Measured on kind v0.33.0, arm64, Docker Desktop with 11.7 GiB:
   kubelet keeps `--node-ip` and `--provider-id`.
 - Memory peaks at about 0.97 GiB for the two nodes.
 - `kubeadm upgrade node` on the worker takes a few seconds.
-- Docker 29 with the containerd image store cannot export
-  `registry.k8s.io/etcd:3.7.0-0` (`docker save --platform` fails), so on such
-  a host the image is not preloaded by `kind load`. Setup pulls it inside the
-  node instead and warns if it cannot.

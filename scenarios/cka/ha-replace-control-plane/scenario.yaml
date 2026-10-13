@@ -22,6 +22,8 @@ spec:
     - "`etcdctl member --help` lists what you can do with the members. etcdctl
       on the node needs the etcd endpoint and certificates, like the etcd
       snapshot commands do."
+    - Removing a member that is still healthy costs etcd quorum. If you make a
+      mistake, `kubestronaut reset` starts the lab over.
     - "`kubeadm init phase upload-certs --help` shows how a joining control
       plane gets the cluster certificates."
     - A kubeadm join for a control plane needs both a bootstrap token and the
@@ -81,6 +83,12 @@ spec:
       description: controlplane03 has serving certificates issued after it was wiped
       type: script
       path: checks/cp03-certs-new.sh
+    - id: control-plane-count
+      description: the cluster has three control-plane nodes
+      type: count
+      ref: {kind: node, selector: node-role.kubernetes.io/control-plane}
+      eq: 3
+      retry: {attempts: 6, interval: 3s}
     - id: web-available
       description: deployment ops/web has 2 available replicas
       type: ready
@@ -91,5 +99,5 @@ spec:
     script: solution/solve.sh
     readme: solution/README.md
   validation:
-    passBeforeSolution: [web-available]
+    passBeforeSolution: [control-plane-count, web-available]
     timeout: 25m
